@@ -9,7 +9,8 @@ import '../../widgets.dart';
 
 /// Modul A: the operator photographs a found item; the AI pre-fills type, color and text.
 class IntakeScreen extends StatefulWidget {
-  final VoidCallback? onSaved;
+  /// Called with the registered item and how many passengers were notified about it.
+  final void Function(FoundItem item, int notified)? onSaved;
   const IntakeScreen({super.key, this.onSaved});
 
   @override
@@ -99,23 +100,8 @@ class _IntakeScreenState extends State<IntakeScreen> {
         secretDetail: _secret.text.trim(),
       );
       if (!mounted) return;
-      widget.onSaved?.call();
-      await showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          icon: const Icon(Icons.check_circle, color: Colors.green, size: 48),
-          title: const Text('Item registered'),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            ItemCard(item: r.item),
-            const SizedBox(height: 8),
-            Text(r.notified > 0
-                ? '${r.notified} passenger(s) with a matching report were notified.'
-                : 'No matching lost reports yet. Passengers will be matched automatically.'),
-          ]),
-          actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Next item'))],
-        ),
-      );
-      _reset();
+      _reset(); // ready for the next item
+      widget.onSaved?.call(r.item, r.notified); // staff home confirms and opens the inventory
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {

@@ -7,6 +7,7 @@ import '../../theme.dart';
 import '../../ui.dart';
 import '../../widgets.dart';
 import 'map_screen.dart';
+import 'photo_search_screen.dart';
 import 'shell.dart';
 
 class ItemDetailsScreen extends StatelessWidget {
@@ -28,70 +29,102 @@ class ItemDetailsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: rAppBar(context, 'Item details'),
-      body: PageBody(children: [
-        Container(
-          decoration: BoxDecoration(color: p.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: p.border)),
-          padding: const EdgeInsets.all(8),
-          child: ItemImage(url: item.imageUrl, category: item.category, size: double.infinity, height: 220, radius: 10),
-        ),
-        const SizedBox(height: 14),
-        Eyebrow('Found item · ${data.itemRef(item)}'),
-        const SizedBox(height: 8),
-        if (potential) ...[const PotentialMatchBadge(label: 'Potential match to your report'), const SizedBox(height: 8)],
-        Text(itemTitle(item.color, item.category), style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 26)),
-        const SizedBox(height: 6),
-        Text(description, style: TextStyle(color: p.muted, fontSize: 13.5, height: 1.4)),
-        const SizedBox(height: 12),
-        SurfaceCard(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          child: Column(children: [
-            InfoRow(icon: Icons.calendar_today_outlined, label: 'Date found', value: fmtDate(item.timestamp)),
-            InfoRow(icon: Icons.place_outlined, label: 'Found near', value: '${airport.short} · ${item.location}'),
-            InfoRow(icon: Icons.inventory_2_outlined, label: 'Safely held by', value: '${airport.short} ${airport.team}'),
-            if (item.zoneId != null)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => AirportMapScreen(airport: item.airport, focusZoneId: item.zoneId),
-                  )),
-                  icon: const Icon(Icons.map_outlined, size: 16),
-                  label: const Text('View on map', style: TextStyle(fontSize: 12.5)),
+      body: PageBody(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: p.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: p.border),
+            ),
+            padding: const EdgeInsets.all(8),
+            child: ItemImage(
+              url: data.photoOf(item),
+              category: item.category,
+              size: double.infinity,
+              height: 220,
+              radius: 10,
+              hidden: data.photoHidden(item),
+            ),
+          ),
+          if (data.photoHidden(item)) const _HiddenPhotoHint(),
+          const SizedBox(height: 14),
+          Eyebrow('Found item · ${data.itemRef(item)}'),
+          const SizedBox(height: 8),
+          if (potential) ...[
+            const PotentialMatchBadge(label: 'Potential match to your report'),
+            const SizedBox(height: 8),
+          ],
+          Text(
+            itemTitle(item.color, item.category),
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 26),
+          ),
+          const SizedBox(height: 6),
+          Text(description, style: TextStyle(color: p.muted, fontSize: 13.5, height: 1.4)),
+          const SizedBox(height: 12),
+          SurfaceCard(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            child: Column(
+              children: [
+                InfoRow(icon: Icons.calendar_today_outlined, label: 'Date found', value: fmtDate(item.timestamp)),
+                InfoRow(icon: Icons.place_outlined, label: 'Found near', value: '${airport.short} · ${item.location}'),
+                InfoRow(
+                  icon: Icons.inventory_2_outlined,
+                  label: 'Safely held by',
+                  value: '${airport.short} ${airport.team}',
                 ),
-              ),
-          ]),
-        ),
-        if (item.status != 'available')
-          const NoteCard(icon: Icons.check_circle_outline, title: 'This item has already been returned to its owner.')
-        else if (existingClaim != null) ...[
-          const NoteCard(icon: Icons.hourglass_top, title: 'You already claimed this item', body: 'Follow its progress in My reports.'),
-          const SizedBox(height: 12),
-          PrimaryButton(
-            label: 'View claim status',
-            onPressed: () => AppShell.goTo(ShellTab.reports, reset: true),
+                if (item.zoneId != null)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => AirportMapScreen(airport: item.airport, focusZoneId: item.zoneId),
+                        ),
+                      ),
+                      icon: const Icon(Icons.map_outlined, size: 16),
+                      label: const Text('View on map', style: TextStyle(fontSize: 12.5)),
+                    ),
+                  ),
+              ],
+            ),
           ),
-        ] else ...[
-          const NoteCard(
-            icon: Icons.shield_outlined,
-            title: "Looks familiar? Let's check securely.",
-            body: 'Share a unique detail or proof of purchase in a private form. Only the airport team sees it.',
-          ),
-          const SizedBox(height: 12),
-          PrimaryButton(
-            label: 'Verify ownership & claim',
-            icon: Icons.verified_user_outlined,
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => VerifyClaimScreen(item: item))),
+          if (item.status != 'available')
+            const NoteCard(icon: Icons.check_circle_outline, title: 'This item has already been returned to its owner.')
+          else if (existingClaim?.status == 'locked')
+            _LockedNote(desk: '${airport.short} ${airport.desk}')
+          else if (existingClaim != null) ...[
+            const NoteCard(
+              icon: Icons.hourglass_top,
+              title: 'You already claimed this item',
+              body: 'Follow its progress in My reports.',
+            ),
+            const SizedBox(height: 12),
+            PrimaryButton(label: 'View claim status', onPressed: () => AppShell.goTo(ShellTab.reports, reset: true)),
+          ] else ...[
+            const NoteCard(
+              icon: Icons.shield_outlined,
+              title: "Looks familiar? Let's check securely.",
+              body: 'Share a unique detail or proof of purchase in a private form. Only the airport team sees it.',
+            ),
+            const SizedBox(height: 12),
+            PrimaryButton(
+              label: 'Verify ownership & claim',
+              icon: Icons.verified_user_outlined,
+              onPressed: () =>
+                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => VerifyClaimScreen(item: item))),
+            ),
+          ],
+          const SizedBox(height: 10),
+          Center(
+            child: Text(
+              'This is a possible match, not confirmed ownership.\nThe airport team reviews every claim.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: p.muted, fontSize: 11.5),
+            ),
           ),
         ],
-        const SizedBox(height: 10),
-        Center(
-          child: Text(
-            'This is a possible match, not confirmed ownership.\nThe airport team reviews every claim.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: p.muted, fontSize: 11.5),
-          ),
-        ),
-      ]),
+      ),
     );
   }
 }
@@ -109,6 +142,9 @@ class _VerifyClaimScreenState extends State<VerifyClaimScreen> {
   final _answer = TextEditingController();
   String? _claimId;
   String? _question;
+  int _attemptsLeft = 3;
+  String? _wrong; // feedback after an incorrect answer
+  bool _locked = false;
   bool _busy = true;
   Object? _error;
 
@@ -130,13 +166,16 @@ class _VerifyClaimScreenState extends State<VerifyClaimScreen> {
         category: widget.item.category,
         color: widget.item.color,
         lastSeenLocation: widget.item.location,
-      ))
-          .report;
+      )).report;
       final c = await Api.instance.createClaim(report.id, widget.item.id);
       setState(() {
         _claimId = c.id;
         _question = c.question;
+        _attemptsLeft = c.attemptsLeft;
       });
+    } on ApiException catch (e) {
+      // 423: already locked out of this item.
+      setState(() => e.message.startsWith('Too many') ? _locked = true : _error = e);
     } catch (e) {
       setState(() => _error = e);
     } finally {
@@ -151,11 +190,30 @@ class _VerifyClaimScreenState extends State<VerifyClaimScreen> {
     }
     setState(() => _busy = true);
     try {
-      await Api.instance.answerClaim(_claimId!, _answer.text.trim());
+      final r = await Api.instance.answerClaim(_claimId!, _answer.text.trim());
+      if (r.status == 'awaiting_answer') {
+        setState(() {
+          _attemptsLeft = r.attemptsLeft ?? _attemptsLeft - 1;
+          _wrong = "That doesn't match the details we hold. Check and try again.";
+          _answer.clear();
+        });
+        return;
+      }
       await AppData.instance.refresh();
       if (!mounted) return;
+      if (r.status == 'locked') {
+        setState(() => _locked = true);
+        return;
+      }
       Navigator.of(context).popUntil((r) => r.isFirst);
       AppShell.goTo(ShellTab.reports, reset: true);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (e.message.startsWith('Too many')) {
+        setState(() => _locked = true);
+      } else {
+        showError(context, e);
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -169,49 +227,153 @@ class _VerifyClaimScreenState extends State<VerifyClaimScreen> {
     final item = widget.item;
     return Scaffold(
       appBar: rAppBar(context, 'Verify ownership'),
-      body: PageBody(children: [
-        const PageHeader(
-          title: "Let's check securely.",
-          subtitle: 'Answer privately. Only the airport team sees your answer.',
-        ),
-        SurfaceCard(
-          child: Row(children: [
-            ItemImage(url: item.imageUrl, category: item.category, size: 52),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(itemTitle(item.color, item.category), style: const TextStyle(fontWeight: FontWeight.w600)),
-                Text('Found item ${AppData.instance.itemRef(item)}', style: TextStyle(color: p.muted, fontSize: 12)),
-              ]),
+      body: PageBody(
+        children: [
+          const PageHeader(
+            title: "Let's check securely.",
+            subtitle: 'Answer privately. Only the airport team sees your answer.',
+          ),
+          SurfaceCard(
+            child: Row(
+              children: [
+                ItemImage(
+                  url: AppData.instance.photoOf(item),
+                  category: item.category,
+                  size: 52,
+                  hidden: AppData.instance.photoHidden(item),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(itemTitle(item.color, item.category), style: const TextStyle(fontWeight: FontWeight.w600)),
+                      Text(
+                        'Found item ${AppData.instance.itemRef(item)}',
+                        style: TextStyle(color: p.muted, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ]),
-        ),
-        const SizedBox(height: 8),
-        if (_error != null)
-          NoteCard(icon: Icons.error_outline, title: "We couldn't start the claim", body: '$_error')
-        else if (_question == null)
-          const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
-        else ...[
-          Eyebrow('Security question', color: p.primary),
+          ),
+          const SizedBox(height: 8),
+          if (_locked) ...[
+            _LockedNote(
+              desk: () {
+                final a = AppData.instance.airportByCode(item.airport);
+                return '${a.short} ${a.desk}';
+              }(),
+            ),
+            const SizedBox(height: 12),
+            PrimaryButton(
+              label: 'Back to my reports',
+              onPressed: () {
+                Navigator.of(context).popUntil((r) => r.isFirst);
+                AppShell.goTo(ShellTab.reports, reset: true);
+              },
+            ),
+          ] else if (_error != null)
+            NoteCard(icon: Icons.error_outline, title: "We couldn't start the claim", body: '$_error')
+          else if (_question == null)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else ...[
+            Eyebrow('Security question', color: p.primary),
+            const SizedBox(height: 6),
+            Text(_question!, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, height: 1.35)),
+            const SizedBox(height: 8),
+            if (_wrong != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: p.warningFill, borderRadius: BorderRadius.circular(8)),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, color: p.warning, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _wrong!,
+                        style: TextStyle(color: p.warning, fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            Align(
+              alignment: Alignment.centerLeft,
+              child: RBadge(
+                '$_attemptsLeft attempt${_attemptsLeft == 1 ? '' : 's'} left',
+                icon: Icons.shield_outlined,
+                kind: _attemptsLeft <= 1 ? BadgeKind.warning : BadgeKind.neutral,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _answer,
+              maxLines: 4,
+              maxLength: 500,
+              decoration: const InputDecoration(hintText: 'E.g. a sticker, scratch, engraving, what was inside…'),
+            ),
+            const NoteCard(
+              icon: Icons.lock_outline,
+              title: 'Similarity is not proof of ownership',
+              body: 'The team compares your answer with details only the owner would know, then issues a pickup pass.',
+            ),
+            const SizedBox(height: 14),
+            PrimaryButton(label: 'Submit answer', icon: Icons.send_outlined, busy: _busy, onPressed: _submit),
+          ],
           const SizedBox(height: 6),
-          Text(_question!, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, height: 1.35)),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _answer,
-            maxLines: 4,
-            maxLength: 500,
-            decoration: const InputDecoration(hintText: 'E.g. a sticker, scratch, engraving, what was inside…'),
-          ),
-          const NoteCard(
-            icon: Icons.lock_outline,
-            title: 'Similarity is not proof of ownership',
-            body: 'The team compares your answer with details only the owner would know, then issues a pickup pass.',
-          ),
-          const SizedBox(height: 14),
-          PrimaryButton(label: 'Send for review', icon: Icons.send_outlined, busy: _busy, onPressed: _submit),
+          const HelpLink(),
         ],
-        const SizedBox(height: 6),
-        const HelpLink(),
+      ),
+    );
+  }
+}
+
+/// Shown once a passenger gave too many wrong answers for an item.
+class _LockedNote extends StatelessWidget {
+  final String desk;
+  const _LockedNote({required this.desk});
+
+  @override
+  Widget build(BuildContext context) => NoteCard(
+    icon: Icons.lock_outline,
+    title: 'Claim locked for this item',
+    body:
+        'Too many answers did not match the details we hold. To protect the owner, you can only claim '
+        'this item in person now: visit the $desk with your ID and boarding pass.',
+  );
+}
+
+/// Under a blurred photo: why it's blurred and how to see it clearly.
+class _HiddenPhotoHint extends StatelessWidget {
+  const _HiddenPhotoHint();
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(children: [
+        Icon(Icons.shield_outlined, size: 16, color: p.muted),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            "Photo blurred to protect the owner. Search with a photo of your own item to see a clear picture if it's a match.",
+            style: TextStyle(color: p.muted, fontSize: 12, height: 1.35),
+          ),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PhotoSearchScreen())),
+          child: const Text('Search by photo', style: TextStyle(fontSize: 12.5)),
+        ),
       ]),
     );
   }

@@ -51,7 +51,9 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
   }
 
   Future<void> _reload() async {
-    setState(() => _items = Api.instance.foundItems(airport: _airport));
+    setState(() {
+      _items = Api.instance.foundItems(airport: _airport);
+    });
     await Future.wait([_items, AppData.instance.refresh()]);
   }
 
@@ -109,6 +111,12 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
     if (t != null) setState(() => _terminal = t.isEmpty ? null : t);
   }
 
+  /// Reverse image search; matches it finds show their clear photo here afterwards.
+  Future<void> _photoSearch() async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PhotoSearchScreen()));
+    if (mounted) setState(() {});
+  }
+
   void _clearFilters() => setState(() {
         _dates = null;
         _category = null;
@@ -143,7 +151,7 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
                 suffixIcon: IconButton(
                   icon: Icon(Icons.photo_camera_outlined, color: p.primary),
                   tooltip: 'Search by photo',
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PhotoSearchScreen())),
+                  onPressed: _photoSearch,
                 ),
               ),
             ),
@@ -181,6 +189,23 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
             if (snap.hasError) NoteCard(icon: Icons.cloud_off, title: "Can't load items", body: '${snap.error}'),
             if (!snap.hasData && !snap.hasError)
               const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
+            if (items.any(data.photoHidden))
+              SurfaceCard(
+                color: p.tint,
+                onTap: _photoSearch,
+                padding: const EdgeInsets.all(12),
+                child: Row(children: [
+                  Icon(Icons.visibility_off_outlined, size: 18, color: p.primary),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Photos are blurred to protect owners. Search with a photo of your item to see clear pictures of similar ones.',
+                      style: TextStyle(fontSize: 12.5, height: 1.35),
+                    ),
+                  ),
+                  Icon(Icons.photo_camera_outlined, size: 18, color: p.primary),
+                ]),
+              ),
             if (snap.hasData && items.isEmpty)
               const NoteCard(icon: Icons.search_off, title: 'No items match', body: 'Try fewer filters, or report your item so we can notify you.'),
             for (final item in items)

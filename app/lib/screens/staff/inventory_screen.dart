@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../api.dart';
 import '../../app_state.dart';
 import '../../models.dart';
+import '../../ui.dart';
 import '../../widgets.dart';
 
 class InventoryScreen extends StatefulWidget {
@@ -16,10 +17,15 @@ class InventoryScreenState extends State<InventoryScreen> {
   String _status = 'available';
   String? _category;
   late Future<List<FoundItem>> _items = _load();
+  String? _highlight; // just registered: marked "New" at the top of the list
 
-  Future<List<FoundItem>> _load() => Api.instance.foundItems(airport: AppData.instance.airport.code, status: _status, category: _category);
+  Future<List<FoundItem>> _load() => Api.instance.foundItems(airport: AppData.instance.airport.code, status: _status, category: _category, staff: true);
 
-  void refresh() => setState(() => _items = _load());
+  void refresh({String? highlight}) => setState(() {
+        _highlight = highlight;
+        if (highlight != null) _status = 'available';
+        _items = _load();
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -28,6 +34,7 @@ class InventoryScreenState extends State<InventoryScreen> {
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
         child: Row(children: [
           SegmentedButton<String>(
+            showSelectedIcon: false,
             segments: const [
               ButtonSegment(value: 'available', label: Text('Available')),
               ButtonSegment(value: 'claimed', label: Text('Recovered')),
@@ -68,7 +75,12 @@ class InventoryScreenState extends State<InventoryScreen> {
               return ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: items.length,
-                itemBuilder: (_, i) => ItemCard(item: items[i]),
+                itemBuilder: (_, i) => ItemCard(
+                  item: items[i],
+                  trailing: items[i].id == _highlight
+                      ? const RBadge('New', icon: Icons.check_circle, kind: BadgeKind.success)
+                      : null,
+                ),
               );
             },
           ),

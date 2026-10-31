@@ -5,6 +5,7 @@ import '../../api.dart';
 import '../../app_state.dart';
 import '../../theme.dart';
 import '../../ui.dart';
+import '../developer_screen.dart';
 import '../staff/staff_home.dart';
 
 class HelpScreen extends StatelessWidget {
@@ -91,6 +92,7 @@ class HelpScreen extends StatelessWidget {
 /// Account & settings: appearance, backend address, staff mode.
 Future<void> showAccountSheet(BuildContext context) {
   final data = AppData.instance;
+  var devTaps = 0;
   return showModalBottomSheet(
     context: context,
     showDragHandle: true,
@@ -104,7 +106,13 @@ Future<void> showAccountSheet(BuildContext context) {
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('Account & settings', style: Theme.of(ctx).textTheme.titleMedium),
             const SizedBox(height: 4),
-            Text('Passenger ID · ${data.userId}', style: TextStyle(color: p.muted, fontSize: 12)),
+            // Hidden: tap the passenger ID 7 times to unlock the developer tools.
+            GestureDetector(
+              onTap: () {
+                if (++devTaps == 7 && data.devKey == null) unlockDeveloperTools(ctx);
+              },
+              child: Text('Passenger ID · ${data.userId}', style: TextStyle(color: p.muted, fontSize: 12)),
+            ),
             const SizedBox(height: 16),
             const Text('Appearance', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
             const SizedBox(height: 8),
@@ -139,6 +147,23 @@ Future<void> showAccountSheet(BuildContext context) {
                 Navigator.pop(ctx);
                 Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => const StaffHome()));
               },
+            ),
+            ListenableBuilder(
+              listenable: data,
+              builder: (_, _) => data.devKey == null
+                  ? const SizedBox.shrink()
+                  : ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.developer_mode, color: Color(0xFFE5484D)),
+                      title: const Text('Developer tools'),
+                      subtitle: const Text('Reset demo data'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        Navigator.of(context, rootNavigator: true)
+                            .push(MaterialPageRoute(builder: (_) => const DeveloperScreen()));
+                      },
+                    ),
             ),
           ]),
         ),

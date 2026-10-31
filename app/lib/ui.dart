@@ -312,7 +312,16 @@ class ItemImage extends StatelessWidget {
   final double size;
   final double? height;
   final double radius;
-  const ItemImage({super.key, this.url, required this.category, this.size = 64, this.height, this.radius = 10});
+  final bool hidden; // blurred preview: show a small "hidden" marker on top
+  const ItemImage({
+    super.key,
+    this.url,
+    required this.category,
+    this.size = 64,
+    this.height,
+    this.radius = 10,
+    this.hidden = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -322,14 +331,33 @@ class ItemImage extends StatelessWidget {
       alignment: Alignment.center,
       child: Icon(categoryIcon(category), color: p.primary, size: size * 0.4),
     );
+    final image = url == null || url!.isEmpty
+        ? fallback
+        : Image.network(Api.instance.imageUrl(url!), fit: BoxFit.cover, errorBuilder: (_, _, _) => fallback);
+    final small = (height ?? size) < 100;
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: SizedBox(
         width: size,
         height: height ?? size,
-        child: url == null || url!.isEmpty
-            ? fallback
-            : Image.network(Api.instance.imageUrl(url!), fit: BoxFit.cover, errorBuilder: (_, _, _) => fallback),
+        child: !hidden
+            ? image
+            : Stack(fit: StackFit.expand, children: [
+                image,
+                Center(
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: small ? 5 : 10, vertical: small ? 5 : 6),
+                    decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.45), borderRadius: BorderRadius.circular(20)),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.visibility_off_outlined, color: Colors.white, size: small ? 14 : 16),
+                      if (!small) ...[
+                        const SizedBox(width: 6),
+                        const Text('Photo hidden', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                      ],
+                    ]),
+                  ),
+                ),
+              ]),
       ),
     );
   }
@@ -351,7 +379,7 @@ class FoundItemTile extends StatelessWidget {
       onTap: onTap,
       padding: const EdgeInsets.all(10),
       child: Row(children: [
-        ItemImage(url: item.imageUrl, category: item.category, size: 76),
+        ItemImage(url: data.photoOf(item), category: item.category, size: 76, hidden: data.photoHidden(item)),
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

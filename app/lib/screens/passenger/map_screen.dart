@@ -87,7 +87,9 @@ class _AirportMapViewState extends State<AirportMapView> with SingleTickerProvid
     super.dispose();
   }
 
-  void _refresh() => setState(() => _load = _fetch());
+  void _refresh() => setState(() {
+        _load = _fetch();
+      });
 
   // ---------------------------------------------------------------- camera
 

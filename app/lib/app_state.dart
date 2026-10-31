@@ -28,8 +28,31 @@ class AppData extends ChangeNotifier {
   bool loaded = false;
   Object? error;
 
+  /// Set once the developer tools are unlocked with the server's developer key.
+  String? devKey;
+
+  Future<void> setDevKey(String? key) async {
+    devKey = key;
+    final prefs = await SharedPreferences.getInstance();
+    key == null ? await prefs.remove('devKey') : await prefs.setString('devKey', key);
+    notifyListeners();
+  }
+
+  /// After a developer reset: forget everything shown on this device, then reload (now empty).
+  Future<void> clearPassengerData() async {
+    reports = [];
+    claims = [];
+    matchesByReport.clear();
+    itemCache.clear();
+    revealedPhotos.clear();
+    zones = []; // pin counts on the map
+    notifyListeners();
+    await refresh();
+  }
+
   Future<void> loadPrefs(SharedPreferences prefs, String userId) async {
     this.userId = userId;
+    devKey = prefs.getString('devKey');
     themeMode.value = ThemeMode.values.byName(prefs.getString('themeMode') ?? 'system');
     final code = prefs.getString('airport');
     // Placeholder until /meta returns the full airport details.
@@ -94,6 +117,19 @@ class AppData extends ChangeNotifier {
 
   // ---------------------------------------------------------------- derived data
 
+  /// Clear photos of items the passenger found with a reverse image search (this session only).
+  /// Everywhere else found items show the blurred preview the server sends.
+  final revealedPhotos = <String, String>{};
+
+  void revealPhotos(Iterable<FoundItem> items) {
+    for (final i in items) {
+      if (!i.photoHidden && i.imageUrl.isNotEmpty) revealedPhotos[i.id] = i.imageUrl;
+    }
+  }
+
+  String photoOf(FoundItem i) => revealedPhotos[i.id] ?? i.imageUrl;
+  bool photoHidden(FoundItem i) => i.photoHidden && !revealedPhotos.containsKey(i.id);
+
   List<LostReport> get activeReports => reports.where((r) => r.status != 'recovered').toList();
   List<LostReport> get closedReports => reports.where((r) => r.status == 'recovered').toList();
   LostReport? get latestReport => reports.isEmpty ? null : reports.first;
@@ -108,14 +144,15 @@ class AppData extends ChangeNotifier {
   List<Match> potentialMatches(String reportId) =>
       (matchesByReport[reportId] ?? []).where((m) => m.score >= matchThreshold).toList();
 
-  /// Most recent non-rejected claim of a report.
+  /// Most recent active claim of a report (rejected and locked claims no longer count).
   Claim? claimFor(String reportId) {
     for (final c in claims) {
-      if (c.reportId == reportId && c.status != 'rejected') return c;
+      if (c.reportId == reportId && c.status != 'rejected' && c.status != 'locked') return c;
     }
     return null;
   }
 
+  /// Latest claim on an item, including a lockout after too many wrong answers.
   Claim? claimForItem(String itemId) {
     for (final c in claims) {
       if (c.itemId == itemId && c.status != 'rejected') return c;

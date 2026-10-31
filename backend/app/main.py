@@ -6,18 +6,21 @@ Docs: http://localhost:8000/docs
 from __future__ import annotations
 
 import asyncio
+import difflib
 import io
 import logging
+import math
 import re
 import secrets
+import unicodedata
 from contextlib import asynccontextmanager
 
 import qrcode
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageFilter, UnidentifiedImageError
 from pydantic import BaseModel
 
 from . import config, matching, storage, vision
@@ -30,6 +33,7 @@ log = logging.getLogger("lostfound")
 async def lifespan(_: FastAPI):
     # Load YOLO weights at startup so the first intake request is fast.
     await asyncio.to_thread(vision.warmup)
+    log.info("Developer key (app: Help > Account, tap the passenger ID 7 times): %s", config.DEV_KEY)
     yield
 
 
@@ -63,6 +67,15 @@ class Notifier:
                 await ws.send_json(doc)
             except Exception:
                 self.disconnect(user_id, ws)
+
+    async def broadcast(self, event: dict):
+        """Live event to every connected app (not stored), e.g. {"type": "reset"}."""
+        for user_id, sockets in list(self.sockets.items()):
+            for ws in list(sockets):
+                try:
+                    await ws.send_json(event)
+                except Exception:
+                    self.disconnect(user_id, ws)
 
 
 notifier = Notifier()
@@ -102,16 +115,51 @@ def _save_image(img: Image.Image, prefix: str) -> str:
     return f"/images/{name}"
 
 
-def _public_item(item: dict) -> dict:
-    return {k: v for k, v in item.items() if k not in ("embedding", "secretDetail")}
+def _save_preview(img: Image.Image) -> str:
+    """Small, heavily blurred copy for public listings: shape and colour, no identifying detail.
+    Its file name is unrelated to the original's, so the real photo can't be guessed from it."""
+    small = img.copy()
+    small.thumbnail((360, 360))
+    small = small.filter(ImageFilter.GaussianBlur(max(small.size) / 28))  # shape + colour, no text/stickers
+    name = f"preview_{storage.new_id()}.jpg"
+    small.save(config.IMAGES_DIR / name, "JPEG", quality=70)
+    return f"/images/{name}"
+
+
+def _preview_url(item: dict) -> str | None:
+    """Blurred photo of a found item (made on first use for items registered before blurring existed)."""
+    if item.get("previewUrl") or not item.get("imageUrl"):
+        return item.get("previewUrl")
+    try:
+        with Image.open(config.IMAGES_DIR / item["imageUrl"].rsplit("/", 1)[-1]) as img:
+            url = _save_preview(img.convert("RGB"))
+    except OSError:
+        return None
+    storage.update("found_items", item["id"], previewUrl=url)
+    return url
+
+
+def _public_item(item: dict, reveal: bool = False) -> dict:
+    """Passenger view: no hidden detail, and only the blurred photo unless the passenger
+    found this item through a reverse image search (`reveal`)."""
+    out = {k: v for k, v in item.items() if k not in ("embedding", "secretDetail", "previewUrl")}
+    if not reveal:
+        out["imageUrl"] = _preview_url(item)
+    out["photoHidden"] = not reveal
+    return out
+
+
+def _staff_item(item: dict) -> dict:
+    """Staff view: real photo and the hidden detail."""
+    return {k: v for k, v in item.items() if k not in ("embedding", "previewUrl")}
 
 
 def _public_report(report: dict) -> dict:
     return {k: v for k, v in report.items() if k != "embedding"}
 
 
-def _public_match(m: dict) -> dict:
-    return {"score": m["score"], "breakdown": m["breakdown"], "item": _public_item(m["item"])}
+def _public_match(m: dict, reveal: bool = False) -> dict:
+    return {"score": m["score"], "breakdown": m["breakdown"], "item": _public_item(m["item"], reveal)}
 
 
 def _airport(code: str | None) -> str:
@@ -177,6 +225,7 @@ async def create_found_item(
         "id": storage.new_id(),
         "airport": airport,
         "zoneId": zone_id,
+        "previewUrl": _save_preview(img),
         "imageUrl": _save_image(img, "found"),
         "category": (category or analysis.category).lower(),
         "label": analysis.label,
@@ -199,23 +248,24 @@ async def create_found_item(
             await _notify_match(report, {"score": s, "breakdown": breakdown, "item": item})
             notified.append({"reportId": report["id"], "score": s})
 
-    return {"item": _public_item(item), "ai": analysis.public(), "notifiedReports": notified}
+    return {"item": _staff_item(item), "ai": analysis.public(), "notifiedReports": notified}
 
 
 @app.get("/found-items", tags=["Found Items"])
 def list_found_items(airport: str | None = None, category: str | None = None, color: str | None = None,
-                     zoneId: str | None = None, status: str | None = "available"):
+                     zoneId: str | None = None, status: str | None = "available", staff: bool = False):
+    """Passengers get blurred photos; `staff=true` (inventory) gets the real ones."""
     items = storage.find("found_items", airport=_airport(airport), category=category, color=color,
                          zoneId=zoneId, status=status)
-    return [_public_item(i) for i in items]
+    return [_staff_item(i) if staff else _public_item(i) for i in items]
 
 
 @app.get("/found-items/{item_id}", tags=["Found Items"])
-def get_found_item(item_id: str):
+def get_found_item(item_id: str, staff: bool = False):
     item = storage.get("found_items", item_id)
     if not item:
         raise HTTPException(404, "Item not found")
-    return _public_item(item)
+    return _staff_item(item) if staff else _public_item(item)
 
 
 # ---------------------------------------------------------------- Modul B: Passenger app
@@ -227,7 +277,9 @@ async def visual_search(image: UploadFile = File(...), limit: int = Form(10), ai
     analysis = await asyncio.to_thread(vision.analyze, img)
     query = {"category": analysis.category, "color": analysis.color, "embedding": analysis.embedding}
     matches = matching.rank(query, _available_items(_airport(airport)), limit=limit, min_score=0.2)
-    return {"query": analysis.public(), "matches": [_public_match(m) for m in matches]}
+    # The only passenger view with a clear photo, and only for the best match (results are sorted by score):
+    # enough to recognise your own item, without exposing every similar item someone else lost.
+    return {"query": analysis.public(), "matches": [_public_match(m, reveal=i == 0) for i, m in enumerate(matches)]}
 
 
 @app.post("/lost-reports", tags=["Passenger"])
@@ -347,6 +399,44 @@ def _verification_question(item: dict) -> str:
     return f"Describe the {item['category']} in detail: brand, contents and any distinctive marks."
 
 
+_STOPWORDS = {
+    "the", "and", "with", "has", "have", "there", "this", "that", "its", "it's", "inside", "on", "of", "in",
+    "a", "an", "is", "are", "was", "my", "some", "one", "front", "back", "side", "small", "big", "little",
+}
+
+
+def _words(s: str) -> list[str]:
+    s = unicodedata.normalize("NFKD", s.lower())
+    return re.findall(r"[a-z0-9]+", "".join(ch for ch in s if not unicodedata.combining(ch)))
+
+
+def _check_answer(answer: str, item: dict) -> bool | None:
+    """Does the answer mention the item's hidden detail (or the text printed on it)?
+    Typo-tolerant keyword match: at least half the reference keywords must appear.
+    None when the item has nothing to compare with, so staff decide."""
+    refs = [r for r in (item.get("secretDetail"), item.get("text")) if r and r.strip()]
+    if not refs:
+        return None
+    said = _words(answer)
+    for ref in refs:
+        keys = [w for w in _words(ref) if w not in _STOPWORDS and (len(w) >= 3 or w.isdigit())] or _words(ref)
+        hits = sum(any(difflib.SequenceMatcher(None, k, w).ratio() >= 0.8 for w in said) for k in keys)
+        if keys and hits >= math.ceil(len(keys) / 2):
+            return True
+    return False
+
+
+def _failed_attempts(user_id: str, item_id: str) -> int:
+    """Wrong answers that still count towards the lock (staff unlocking clears them)."""
+    return len(storage.find("claim_attempts", userId=user_id, itemId=item_id, result="wrong", cleared=0))
+
+
+def _lock_message(item: dict) -> str:
+    desk = config.AIRPORTS.get(item.get("airport") or "", {}).get("desk", "lost & found desk")
+    return (f"Too many incorrect answers for this item. Please visit the {desk} with your ID "
+            "and boarding pass to claim it in person.")
+
+
 def _get_claim(claim_id: str) -> dict:
     claim = storage.get("claims", claim_id)
     if not claim:
@@ -373,8 +463,9 @@ def _staff_claim_view(claim: dict) -> dict:
     item = storage.get("found_items", claim["itemId"])
     return {
         "claim": claim,
-        "item": {k: v for k, v in item.items() if k != "embedding"},  # staff sees secretDetail
+        "item": _staff_item(item),  # staff sees the real photo and secretDetail
         "report": _public_report(storage.get("lost_reports", claim["reportId"])),
+        "failedAttempts": _failed_attempts(claim["userId"], claim["itemId"]),
     }
 
 
@@ -386,6 +477,9 @@ def create_claim(body: ClaimCreate):
         raise HTTPException(404, "Report or item not found")
     if item["status"] != "available":
         raise HTTPException(409, "Item is no longer available")
+    failed = _failed_attempts(report["userId"], item["id"])
+    if failed >= config.MAX_CLAIM_ATTEMPTS:
+        raise HTTPException(423, _lock_message(item))
     claim = storage.insert("claims", {
         "id": storage.new_id(),
         "token": secrets.token_urlsafe(16),
@@ -398,7 +492,8 @@ def create_claim(body: ClaimCreate):
         "status": "awaiting_answer",
     })
     storage.update("lost_reports", report["id"], status="matched", matchedItemId=item["id"])
-    return {"id": claim["id"], "question": claim["question"], "status": claim["status"]}
+    return {"id": claim["id"], "question": claim["question"], "status": claim["status"],
+            "attemptsLeft": config.MAX_CLAIM_ATTEMPTS - failed}
 
 
 @app.get("/claims", tags=["Claim & Pick-up"])
@@ -409,11 +504,34 @@ def list_claims(userId: str):
 
 @app.post("/claims/{claim_id}/answer", tags=["Claim & Pick-up"])
 def answer_claim(claim_id: str, body: ClaimAnswer):
+    """Checks the answer against the item's hidden detail and logs the attempt for staff.
+    Right (or nothing to compare with) -> staff review. Wrong -> try again, until
+    MAX_CLAIM_ATTEMPTS wrong answers lock the passenger out of this item."""
     claim = _get_claim(claim_id)
     if claim["status"] != "awaiting_answer":
         raise HTTPException(409, f"Claim is {claim['status']}")
-    storage.update("claims", claim_id, answer=body.answer.strip(), status="under_review")
-    return {"id": claim_id, "status": "under_review"}
+    item = storage.get("found_items", claim["itemId"])
+    if _failed_attempts(claim["userId"], item["id"]) >= config.MAX_CLAIM_ATTEMPTS:
+        raise HTTPException(423, _lock_message(item))
+    answer = body.answer.strip()
+    ok = _check_answer(answer, item)
+    storage.insert("claim_attempts", {
+        "id": storage.new_id(), "claimId": claim_id, "itemId": item["id"], "userId": claim["userId"],
+        "airport": item.get("airport"), "answer": answer,
+        "result": "unchecked" if ok is None else "correct" if ok else "wrong", "cleared": 0,
+        "timestamp": storage.now(),
+    })
+    if ok is not False:
+        storage.update("claims", claim_id, answer=answer, status="under_review")
+        return {"id": claim_id, "status": "under_review", "correct": ok, "attemptsLeft": None}
+
+    left = config.MAX_CLAIM_ATTEMPTS - _failed_attempts(claim["userId"], item["id"])
+    if left > 0:
+        return {"id": claim_id, "status": "awaiting_answer", "correct": False, "attemptsLeft": left,
+                "message": f"That doesn't match the details we hold. {left} attempt(s) left."}
+    storage.update("claims", claim_id, answer=answer, status="locked", reviewedAt=storage.now())
+    storage.update("lost_reports", claim["reportId"], status="searching", matchedItemId=None)
+    return {"id": claim_id, "status": "locked", "correct": False, "attemptsLeft": 0, "message": _lock_message(item)}
 
 
 @app.get("/claims/{claim_id}/qr", tags=["Claim & Pick-up"])
@@ -432,6 +550,51 @@ def claim_qr(claim_id: str):
 def staff_claims(status: str = "under_review"):
     """Claims waiting for an ownership decision, with the hidden detail to compare against."""
     return [_staff_claim_view(c) for c in storage.find("claims", status=status)]
+
+
+class Unlock(BaseModel):
+    userId: str
+    itemId: str
+
+
+@app.get("/staff/claim-attempts", tags=["Claim & Pick-up"])
+def claim_attempts(airport: str | None = None, lockedOnly: bool = False):
+    """Verification log: every answer a passenger typed for an item, grouped per passenger + item,
+    with how many wrong answers count towards the lock and whether they are locked out."""
+    groups: dict[tuple[str, str], dict] = {}
+    for a in storage.find("claim_attempts", airport=airport.upper() if airport else None):
+        g = groups.setdefault((a["userId"], a["itemId"]), {"userId": a["userId"], "itemId": a["itemId"], "attempts": []})
+        g["attempts"].append({k: a[k] for k in ("id", "claimId", "answer", "result", "timestamp")} | {"cleared": bool(a["cleared"])})
+    out = []
+    for g in groups.values():
+        item = storage.get("found_items", g["itemId"])
+        if not item:
+            continue
+        failed = sum(a["result"] == "wrong" and not a["cleared"] for a in g["attempts"])
+        g |= {
+            "item": _staff_item(item),  # staff view: real photo, secretDetail
+            "failed": failed,
+            "maxAttempts": config.MAX_CLAIM_ATTEMPTS,
+            "locked": failed >= config.MAX_CLAIM_ATTEMPTS,
+            "lastAttempt": g["attempts"][0]["timestamp"],  # newest first
+        }
+        if g["locked"] or not lockedOnly:
+            out.append(g)
+    return sorted(out, key=lambda g: g["lastAttempt"], reverse=True)
+
+
+@app.post("/staff/claim-attempts/unlock", tags=["Claim & Pick-up"])
+async def unlock_claims(body: Unlock):
+    """Staff checked the passenger in person: wrong answers stop counting (they stay in the log)."""
+    wrong = storage.find("claim_attempts", userId=body.userId, itemId=body.itemId, result="wrong", cleared=0)
+    for a in wrong:
+        storage.update("claim_attempts", a["id"], cleared=1)
+    for c in storage.find("claims", userId=body.userId, itemId=body.itemId, status="locked"):
+        storage.update("claims", c["id"], status="rejected")
+    await notifier.send(body.userId, "You can try again",
+                        "The airport team unlocked your claim. You can verify ownership again.",
+                        {"itemId": body.itemId})
+    return {"userId": body.userId, "itemId": body.itemId, "cleared": len(wrong)}
 
 
 @app.post("/staff/claims/{claim_id}/review", tags=["Claim & Pick-up"])
@@ -485,3 +648,42 @@ async def decide_claim(token: str, body: ClaimDecision):
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- Developer tools
+
+class ResetRequest(BaseModel):
+    includeItems: bool = False
+
+
+def _require_dev(key: str | None):
+    if not key or not secrets.compare_digest(key, config.DEV_KEY):
+        raise HTTPException(401, "Wrong developer key")
+
+
+@app.get("/dev/check", tags=["Developer"])
+def dev_check(x_dev_key: str | None = Header(None)):
+    """Lets the app unlock its developer tools (send the key in the X-Dev-Key header)."""
+    _require_dev(x_dev_key)
+    return {"ok": True}
+
+
+@app.post("/dev/reset", tags=["Developer"])
+async def dev_reset(body: ResetRequest, x_dev_key: str | None = Header(None)):
+    """Demo reset: delete every passenger request (lost reports, claims, verification attempts,
+    notifications) and put found items back on the shelf. With includeItems, empty the inventory too.
+    Connected apps get a live {"type": "reset"} event and clear their screens."""
+    _require_dev(x_dev_key)
+    deleted = {t: storage.execute(f"DELETE FROM {t}") for t in ("lost_reports", "claims", "claim_attempts", "notifications")}
+    prefixes = ("lost_",)
+    if body.includeItems:
+        deleted["found_items"] = storage.execute("DELETE FROM found_items")
+        prefixes += ("found_", "preview_")
+    else:
+        deleted["itemsBackOnShelf"] = storage.execute("UPDATE found_items SET status = 'available' WHERE status != 'available'")
+    for f in config.IMAGES_DIR.iterdir():
+        if f.name.startswith(prefixes):
+            f.unlink(missing_ok=True)
+    log.warning("Developer reset: %s", deleted)
+    await notifier.broadcast({"type": "reset"})
+    return {"deleted": deleted}

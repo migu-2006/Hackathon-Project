@@ -41,6 +41,8 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
     setState(() => _busy = true);
     try {
       final r = await Api.instance.visualSearch(_photo!, airport: AppData.instance.airport.code);
+      // Matches from a reverse image search come with clear photos: keep showing them clearly.
+      AppData.instance.revealPhotos(r.matches.map((m) => m.item));
       if (!mounted) return;
       final changed = await Navigator.of(context).push<XFile>(
         MaterialPageRoute(builder: (_) => PhotoResultsScreen(photo: _photo!, query: r.query, matches: r.matches)),
@@ -182,6 +184,20 @@ class PhotoResultsScreen extends StatelessWidget {
           '${matches.length} visually similar item${matches.length == 1 ? '' : 's'}',
           trailing: 'Most similar first',
         ),
+        if (matches.length > 1)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(children: [
+              Icon(Icons.visibility_outlined, size: 15, color: p.muted),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Clear photo for the closest match only; the others stay blurred to protect their owners.',
+                  style: TextStyle(color: p.muted, fontSize: 12),
+                ),
+              ),
+            ]),
+          ),
         if (matches.isEmpty)
           const NoteCard(
             icon: Icons.search_off,

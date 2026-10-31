@@ -188,7 +188,12 @@ class _ReportCase extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.all(12),
               child: Row(children: [
-                ItemImage(url: matchItem?.imageUrl ?? report.imageUrl, category: report.category, size: 52),
+                ItemImage(
+                  url: matchItem != null ? AppData.instance.photoOf(matchItem) : report.imageUrl,
+                  category: report.category,
+                  size: 52,
+                  hidden: matchItem != null && AppData.instance.photoHidden(matchItem),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -379,7 +384,12 @@ class PickupPassScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.all(12),
               child: Row(children: [
-                ItemImage(url: item?.imageUrl, category: report.category, size: 52),
+                ItemImage(
+                  url: item == null ? null : AppData.instance.photoOf(item!),
+                  category: report.category,
+                  size: 52,
+                  hidden: item != null && AppData.instance.photoHidden(item!),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

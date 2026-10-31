@@ -17,6 +17,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS found_items (
     id TEXT PRIMARY KEY,
     imageUrl TEXT,
+    previewUrl TEXT,      -- blurred copy shown publicly; the real photo only via reverse image search
     category TEXT,
     label TEXT,
     color TEXT,
@@ -58,6 +59,17 @@ CREATE TABLE IF NOT EXISTS claims (
     reviewedAt TEXT,
     status TEXT
 );
+CREATE TABLE IF NOT EXISTS claim_attempts (
+    id TEXT PRIMARY KEY,
+    claimId TEXT,
+    itemId TEXT,
+    userId TEXT,
+    airport TEXT,
+    answer TEXT,
+    result TEXT,          -- correct | wrong | unchecked (no hidden detail to compare: staff decides)
+    cleared INTEGER DEFAULT 0,  -- 1 once staff unlocked the passenger (kept for the audit log)
+    timestamp TEXT
+);
 CREATE TABLE IF NOT EXISTS notifications (
     id TEXT PRIMARY KEY,
     userId TEXT,
@@ -89,7 +101,8 @@ def _connect() -> sqlite3.Connection:
 def _migrate(conn: sqlite3.Connection) -> None:
     """Add columns introduced after a database was created (CREATE IF NOT EXISTS won't)."""
     for table, column in [("lost_reports", "travelDate"), ("claims", "reviewedAt"),
-                          ("found_items", "airport"), ("found_items", "zoneId"), ("lost_reports", "airport")]:
+                          ("found_items", "airport"), ("found_items", "zoneId"), ("lost_reports", "airport"),
+                          ("found_items", "previewUrl")]:
         existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
@@ -150,3 +163,9 @@ def find(table: str, order: str = "timestamp DESC", **filters) -> list[dict]:
     sql = f"SELECT * FROM {table}" + (f" WHERE {where}" if where else "") + f" ORDER BY {order}"
     with tx() as c:
         return [_row(r) for r in c.execute(sql, tuple(filters.values())).fetchall()]
+
+
+def execute(sql: str, params: tuple = ()) -> int:
+    """Raw write (bulk updates / deletes); returns the number of rows affected."""
+    with tx() as c:
+        return c.execute(sql, params).rowcount

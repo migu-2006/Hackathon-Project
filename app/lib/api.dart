@@ -47,12 +47,13 @@ class Api {
     return body;
   }
 
-  Future<dynamic> _get(String path, [Map<String, String?>? query]) async =>
-      _decode(await client.get(_uri(path, query)));
+  Future<dynamic> _get(String path, [Map<String, String?>? query, Map<String, String>? headers]) async =>
+      _decode(await client.get(_uri(path, query), headers: headers));
 
-  Future<dynamic> _postJson(String path, Map<String, dynamic> body) async => _decode(await client.post(
+  Future<dynamic> _postJson(String path, Map<String, dynamic> body, {Map<String, String>? headers}) async =>
+      _decode(await client.post(
         _uri(path),
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json', ...?headers},
         body: jsonEncode(body),
       ));
 
@@ -111,8 +112,21 @@ class Api {
   Future<List<Zone>> zones(String airport) async =>
       [for (final z in await _get('/airports/$airport/zones')) Zone.fromJson(z)];
 
-  Future<List<FoundItem>> foundItems({required String airport, String? category, String? color, String? status = 'available'}) async {
-    final r = await _get('/found-items', {'airport': airport, 'category': category, 'color': color, 'status': status});
+  /// Passengers get blurred photos; [staff] (inventory) gets the real ones.
+  Future<List<FoundItem>> foundItems({
+    required String airport,
+    String? category,
+    String? color,
+    String? status = 'available',
+    bool staff = false,
+  }) async {
+    final r = await _get('/found-items', {
+      'airport': airport,
+      'category': category,
+      'color': color,
+      'status': status,
+      'staff': staff ? 'true' : null,
+    });
     return [for (final i in r) FoundItem.fromJson(i)];
   }
 
@@ -166,15 +180,19 @@ class Api {
 
   // ---------------------------------------------------------------- Claim & Pick-up
 
-  /// Returns (claimId, verification question).
-  Future<({String id, String question})> createClaim(String reportId, String itemId) async {
+  /// Returns (claimId, verification question, wrong answers still allowed).
+  /// Throws an [ApiException] when the passenger is locked out of this item.
+  Future<({String id, String question, int attemptsLeft})> createClaim(String reportId, String itemId) async {
     final r = await _postJson('/claims', {'reportId': reportId, 'itemId': itemId});
-    return (id: r['id'] as String, question: r['question'] as String);
+    return (id: r['id'] as String, question: r['question'] as String, attemptsLeft: (r['attemptsLeft'] as num?)?.toInt() ?? 3);
   }
 
-  /// Sends the answer; the claim then waits for the airport team's ownership review.
-  Future<void> answerClaim(String claimId, String answer) async =>
-      _postJson('/claims/$claimId/answer', {'answer': answer});
+  /// Sends the answer. status: under_review (right, goes to the airport team), awaiting_answer
+  /// (wrong, try again) or locked (too many wrong answers).
+  Future<({String status, int? attemptsLeft, String? message})> answerClaim(String claimId, String answer) async {
+    final r = await _postJson('/claims/$claimId/answer', {'answer': answer});
+    return (status: r['status'] as String, attemptsLeft: (r['attemptsLeft'] as num?)?.toInt(), message: r['message'] as String?);
+  }
 
   String claimQrUrl(String claimId) => '$baseUrl/claims/$claimId/qr';
 
@@ -185,11 +203,31 @@ class Api {
   Future<List<Map<String, dynamic>>> staffClaims({String status = 'under_review'}) async =>
       [for (final c in await _get('/staff/claims', {'status': status})) Map<String, dynamic>.from(c)];
 
+  /// Staff: verification attempts per passenger + item (answers, wrong count, lock state).
+  Future<List<Map<String, dynamic>>> claimAttempts({String? airport, bool lockedOnly = false}) async => [
+        for (final g in await _get('/staff/claim-attempts', {'airport': airport, 'lockedOnly': lockedOnly ? 'true' : null}))
+          Map<String, dynamic>.from(g)
+      ];
+
+  /// Staff: lift a lockout after checking the passenger in person.
+  Future<void> unlockClaims(String userId, String itemId) async =>
+      _postJson('/staff/claim-attempts/unlock', {'userId': userId, 'itemId': itemId});
+
   Future<void> reviewClaim(String claimId, bool approved) async =>
       _postJson('/staff/claims/$claimId/review', {'approved': approved});
 
   Future<Map<String, dynamic>> scanClaim(String token) async =>
       Map<String, dynamic>.from(await _get('/claims/scan/${Uri.encodeComponent(token)}'));
+
+  // ---------------------------------------------------------------- Developer tools
+
+  /// Throws an [ApiException] when the developer key is wrong.
+  Future<void> devCheck(String key) async => _get('/dev/check', null, {'X-Dev-Key': key});
+
+  /// Deletes every passenger request (and, with [includeItems], the found-items inventory).
+  /// Returns how many rows were removed per table.
+  Future<Map<String, dynamic>> devReset(String key, {bool includeItems = false}) async => Map<String, dynamic>.from(
+      (await _postJson('/dev/reset', {'includeItems': includeItems}, headers: {'X-Dev-Key': key}))['deleted']);
 
   Future<String> decideClaim(String token, bool approved) async =>
       (await _postJson('/claims/scan/${Uri.encodeComponent(token)}/decision', {'approved': approved}))['status'];

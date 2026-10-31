@@ -189,18 +189,24 @@ class ItemCard extends StatelessWidget {
                 Row(children: [
                   Icon(categoryIcon(item.category), size: 18),
                   const SizedBox(width: 6),
-                  Text(capitalize(item.category), style: theme.textTheme.titleMedium),
+                  Flexible(
+                    child: Text(capitalize(item.category),
+                        style: theme.textTheme.titleMedium, overflow: TextOverflow.ellipsis),
+                  ),
                   const SizedBox(width: 8),
                   ColorDot(namedColor(item.color)),
                   const SizedBox(width: 4),
-                  Text(item.color, style: theme.textTheme.bodySmall),
+                  Flexible(child: Text(item.color, style: theme.textTheme.bodySmall, overflow: TextOverflow.ellipsis)),
                 ]),
                 const SizedBox(height: 4),
                 Row(children: [
                   const Icon(Icons.place, size: 14),
                   const SizedBox(width: 2),
                   Flexible(child: Text(item.location, overflow: TextOverflow.ellipsis)),
-                  Text('  •  ${timeAgo(item.timestamp)}', style: theme.textTheme.bodySmall),
+                  Flexible(
+                    child: Text('  •  ${timeAgo(item.timestamp)}',
+                        style: theme.textTheme.bodySmall, overflow: TextOverflow.ellipsis),
+                  ),
                 ]),
                 if (item.text.isNotEmpty)
                   Text('Text: "${item.text}"', style: theme.textTheme.bodySmall, overflow: TextOverflow.ellipsis),

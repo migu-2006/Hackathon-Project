@@ -1,5 +1,6 @@
 import json
 import os
+import secrets
 from functools import lru_cache
 from pathlib import Path
 
@@ -15,6 +16,8 @@ ENABLE_OCR = os.getenv("LF_ENABLE_OCR", "0") == "1"
 
 # A lost report and a found item are considered a match above this score (0..1).
 MATCH_THRESHOLD = float(os.getenv("LF_MATCH_THRESHOLD", "0.55"))
+# Wrong answers to an item's verification question before the passenger is locked out of that item.
+MAX_CLAIM_ATTEMPTS = int(os.getenv("LF_MAX_CLAIM_ATTEMPTS", "3"))
 
 # Supported airports. Each has a map built from OpenStreetMap by tools/fetch_osm_map.py
 # (app/maps/<code>.json); its zones (gates, check-in, security, ...) are where items get pinned.
@@ -52,3 +55,17 @@ def zones(code: str) -> list[dict]:
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _dev_key() -> str:
+    """Key for the developer-only endpoints (/dev/...): LF_DEV_KEY, else a random one kept in
+    data/dev_key.txt (not committed) and printed when the server starts."""
+    if os.getenv("LF_DEV_KEY"):
+        return os.environ["LF_DEV_KEY"]
+    path = DATA_DIR / "dev_key.txt"
+    if not path.exists():
+        path.write_text(secrets.token_hex(4))  # 8 characters: easy to type on a phone
+    return path.read_text().strip()
+
+
+DEV_KEY = _dev_key()

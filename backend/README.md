@@ -41,8 +41,10 @@ Optional OCR (brand / visible text): `pip install easyocr` and set `LF_ENABLE_OC
 | B – Passenger | GET | `/map/zones` | Terminal zones with pinned items for the map |
 | B – Passenger | WS | `/ws/{userId}` | Realtime match notifications (also `GET /users/{id}/notifications`) |
 | C – Claim | POST | `/claims` | Start a claim → returns verification question |
-| C – Claim | POST | `/claims/{id}/answer` | Answer → claim ready, QR available |
+| C – Claim | POST | `/claims/{id}/answer` | Answer, checked against the hidden detail: right → staff review, wrong → retry; after `LF_MAX_CLAIM_ATTEMPTS` (3) wrong answers the passenger is locked out of that item (HTTP 423) |
 | C – Claim | GET | `/claims/{id}/qr` | QR code PNG |
+| C – Claim | GET | `/staff/claim-attempts` | Verification log per passenger + item (`airport`, `lockedOnly`) |
+| C – Claim | POST | `/staff/claim-attempts/unlock` | Lift a lockout after an ID check (`userId`, `itemId`) |
 | C – Claim | GET | `/claims/scan/{token}` | Desk view after scanning (shows hidden `secretDetail`) |
 | C – Claim | POST | `/claims/scan/{token}/decision` | Approve → item `claimed`, report `recovered` |
 
@@ -76,6 +78,22 @@ the tool with its IATA/ICAO codes and add an entry to `AIRPORTS`.
 
 Found items, lost reports, visual search and matching are scoped per airport (`airport` field).
 Map data © OpenStreetMap contributors, ODbL.
+
+## Developer reset
+
+`POST /dev/reset` (header `X-Dev-Key`) deletes every passenger request — lost reports, claims, verification
+attempts, notifications — and puts found items back on the shelf; `{"includeItems": true}` empties the
+inventory too. Connected apps receive a live `{"type": "reset"}` event and clear their screens.
+
+The key is `LF_DEV_KEY`, or a random one generated into `data/dev_key.txt` and printed when the server
+starts. In the app: Help → Account, tap the passenger ID 7 times, enter the key → **Developer tools**.
+
+## Photo privacy
+
+Each found item gets a small, heavily blurred preview (`previewUrl`, unrelated file name) at intake.
+Passenger views (`/found-items`, `/airports/{IATA}/zones`, report matches) only return that preview with
+`photoHidden: true`. The real photo is returned by `/search/visual` for the single best match only (the
+passenger compares it against a photo of their own item) and by staff views (`?staff=true`, review, attempts log, desk scan).
 
 ## Matching (`app/matching.py`)
 

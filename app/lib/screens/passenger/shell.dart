@@ -28,13 +28,17 @@ class AppShell extends StatefulWidget {
   static void goTo(ShellTab tab, {Widget? push, bool reset = false}) =>
       _key.currentState?._goTo(tab, push: push, reset: reset);
 
+  /// Clear every tab after a developer reset (other devices get this through the live connection).
+  static Future<void> resetAll() async => _key.currentState?._onReset();
+
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell> {
   ShellTab _tab = ShellTab.home;
-  final _navigators = {for (final t in ShellTab.values) t: GlobalKey<NavigatorState>()};
+  // Replaced after a developer reset so every tab is rebuilt from scratch.
+  var _navigators = {for (final t in ShellTab.values) t: GlobalKey<NavigatorState>()};
   final _unread = ValueNotifier(0);
 
   WebSocketChannel? _channel;
@@ -61,7 +65,10 @@ class _AppShellState extends State<AppShell> {
     try {
       _channel = Api.instance.notificationStream(AppData.instance.userId);
       _sub = _channel!.stream.listen(
-        (msg) => _onNotification(AppNotification.fromJson(jsonDecode(msg))),
+        (msg) {
+          final data = jsonDecode(msg) as Map<String, dynamic>;
+          data['type'] == 'reset' ? _onReset() : _onNotification(AppNotification.fromJson(data));
+        },
         onDone: _scheduleReconnect,
         onError: (_) => _scheduleReconnect(),
       );
@@ -100,6 +107,22 @@ class _AppShellState extends State<AppShell> {
         textColor: Colors.white,
         onPressed: () => _goTo(ShellTab.reports, reset: true),
       ),
+    ));
+  }
+
+  /// A developer reset wiped the passenger data on the server: close open screens and start clean.
+  Future<void> _onReset() async {
+    if (!mounted) return;
+    _unread.value = 0;
+    setState(() {
+      _tab = ShellTab.home;
+      _navigators = {for (final t in ShellTab.values) t: GlobalKey<NavigatorState>()};
+    });
+    await AppData.instance.clearPassengerData();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      behavior: SnackBarBehavior.floating,
+      content: Text('Demo data was reset. Everything starts fresh.'),
     ));
   }
 

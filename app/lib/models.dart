@@ -13,7 +13,8 @@ const colors = [
 
 class FoundItem {
   final String id;
-  final String imageUrl;
+  final String imageUrl; // blurred preview for passengers unless photoHidden is false
+  final bool photoHidden; // true until the passenger finds it with a reverse image search
   final String category;
   final String label;
   final String color;
@@ -32,6 +33,7 @@ class FoundItem {
         airport = j['airport'] ?? 'LHR',
         zoneId = j['zoneId'],
         imageUrl = j['imageUrl'] ?? '',
+        photoHidden = j['photoHidden'] ?? false,
         category = j['category'] ?? 'other',
         label = j['label'] ?? '',
         color = j['color'] ?? '',
@@ -109,7 +111,7 @@ class Claim {
   final String question;
   final DateTime timestamp;
   final DateTime? reviewedAt;
-  final String status; // awaiting_answer, under_review, ready_for_pickup, recovered, rejected
+  final String status; // awaiting_answer, under_review, ready_for_pickup, recovered, rejected, locked
 
   Claim.fromJson(Map<String, dynamic> j)
       : id = j['id'],
