@@ -1,7 +1,7 @@
 # SkyFindr — Flutter app
 
-The passenger app follows the design in `../GUI.png` (light + dark, follows the system
-setting; switch in Account ⚙ → Appearance).
+The passenger app has a light and a dark theme (follows the system setting; switch in
+Account ⚙ → Appearance).
 
 | Passenger tab | Screens |
 |---|---|

@@ -2,8 +2,6 @@
 
 Our project for Craiova Hackathon.
 
-Spec: [`lost&found.md`](lost&found.md)
-
 - [`backend/`](backend/README.md) — FastAPI + YOLO (detection, classification, embeddings, color, optional OCR), matching, claims & QR
 - [`app/`](app/README.md) — Flutter app (staff + passenger)
 

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// SkyFindr design tokens (see GUI.png): calm blue on light gray, deep navy in dark mode.
+/// SkyFindr design tokens: calm blue on light gray, deep navy in dark mode.
 class Palette {
   final Color background;
   final Color surface;
