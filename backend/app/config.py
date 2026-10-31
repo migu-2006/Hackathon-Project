@@ -4,10 +4,26 @@ import secrets
 from functools import lru_cache
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+# Secrets (Supabase) live in backend/.env, which is not committed. Real environment variables win.
+load_dotenv(BASE_DIR / ".env")
 DATA_DIR = Path(os.getenv("LF_DATA_DIR", BASE_DIR / "data"))
 IMAGES_DIR = DATA_DIR / "images"
 DB_PATH = DATA_DIR / "lostfound.db"
+
+# Supabase (see supabase/README.md). Without DATABASE_URL the local SQLite file is used;
+# without SUPABASE_URL + SUPABASE_SERVICE_KEY photos stay in data/images.
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "images")
+
+# First administrator, created on start when there is none (see auth.ensure_admin).
+# Without LF_ADMIN_PASSWORD a random one is saved to data/admin_password.txt and printed.
+ADMIN_EMAIL = os.getenv("LF_ADMIN_EMAIL", "admin@skyfindr.app")
+ADMIN_PASSWORD = os.getenv("LF_ADMIN_PASSWORD", "")
 
 # Ultralytics weights are downloaded automatically on first use.
 DETECT_MODEL = os.getenv("LF_DETECT_MODEL", "yolo11n.pt")

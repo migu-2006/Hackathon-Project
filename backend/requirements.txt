@@ -5,6 +5,11 @@ ultralytics
 qrcode[pil]
 numpy
 pillow
+httpx
+python-dotenv
+# Supabase / Postgres (only used when DATABASE_URL is set in backend/.env)
+psycopg[binary]
+psycopg-pool
 # Optional: OCR for brand / visible text (large download, enables Modul A OCR)
 # easyocr
 # Dev

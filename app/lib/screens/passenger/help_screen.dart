@@ -5,8 +5,8 @@ import '../../api.dart';
 import '../../app_state.dart';
 import '../../theme.dart';
 import '../../ui.dart';
+import '../account.dart';
 import '../developer_screen.dart';
-import '../staff/staff_home.dart';
 
 class HelpScreen extends StatelessWidget {
   const HelpScreen({super.key});
@@ -89,7 +89,7 @@ class HelpScreen extends StatelessWidget {
   }
 }
 
-/// Account & settings: appearance, backend address, staff mode.
+/// Account & settings: who is signed in, appearance, backend address, sign out.
 Future<void> showAccountSheet(BuildContext context) {
   final data = AppData.instance;
   var devTaps = 0;
@@ -106,13 +106,26 @@ Future<void> showAccountSheet(BuildContext context) {
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('Account & settings', style: Theme.of(ctx).textTheme.titleMedium),
             const SizedBox(height: 4),
-            // Hidden: tap the passenger ID 7 times to unlock the developer tools.
-            GestureDetector(
-              onTap: () {
-                if (++devTaps == 7 && data.devKey == null) unlockDeveloperTools(ctx);
-              },
-              child: Text('Passenger ID · ${data.userId}', style: TextStyle(color: p.muted, fontSize: 12)),
-            ),
+            // Hidden: tap the account row 7 times to unlock the developer tools.
+            if (data.user != null)
+              GestureDetector(
+                onTap: () {
+                  if (++devTaps == 7 && data.devKey == null) unlockDeveloperTools(ctx);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Row(children: [
+                    UserAvatar(data.user!),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(data.user!.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        Text(data.user!.email, style: TextStyle(color: p.muted, fontSize: 12)),
+                      ]),
+                    ),
+                  ]),
+                ),
+              ),
             const SizedBox(height: 16),
             const Text('Appearance', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
             const SizedBox(height: 8),
@@ -135,17 +148,23 @@ Future<void> showAccountSheet(BuildContext context) {
               title: const Text('Server address'),
               subtitle: Text(Api.instance.baseUrl),
               trailing: const Icon(Icons.edit_outlined, size: 18),
-              onTap: () => _editServer(ctx),
+              onTap: () async {
+                if (await editServerAddress(ctx) && ctx.mounted) Navigator.pop(ctx);
+              },
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.badge_outlined),
-              title: const Text('Airport staff mode'),
-              subtitle: const Text('Register found items, review claims, hand over'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
+              leading: const Icon(Icons.key_outlined),
+              title: const Text('Change password'),
+              onTap: () => changePasswordDialog(ctx),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.logout),
+              title: const Text('Sign out'),
+              onTap: () async {
                 Navigator.pop(ctx);
-                Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => const StaffHome()));
+                await confirmSignOut(context);
               },
             ),
             ListenableBuilder(
@@ -172,7 +191,8 @@ Future<void> showAccountSheet(BuildContext context) {
   );
 }
 
-Future<void> _editServer(BuildContext context) async {
+/// Lets the user point the app at another backend (e.g. the laptop's new IP). True if changed.
+Future<bool> editServerAddress(BuildContext context) async {
   final ctrl = TextEditingController(text: Api.instance.baseUrl);
   final url = await showDialog<String>(
     context: context,
@@ -185,10 +205,10 @@ Future<void> _editServer(BuildContext context) async {
       ],
     ),
   );
-  if (url == null || url.isEmpty) return;
+  if (url == null || url.isEmpty) return false;
   Api.instance.baseUrl = url.replaceAll(RegExp(r'/+$'), '');
   await (await SharedPreferences.getInstance()).setString('baseUrl', Api.instance.baseUrl);
   AppData.instance.zones = []; // reload airport info from the new server
-  await AppData.instance.refresh();
-  if (context.mounted) Navigator.pop(context);
+  if (AppData.instance.user != null) await AppData.instance.refresh();
+  return true;
 }

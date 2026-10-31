@@ -10,9 +10,21 @@ python -m venv .venv
 ```
 
 Open http://localhost:8000/docs for the interactive API. YOLO weights (`yolo11n.pt`, `yolo11n-cls.pt`)
-download automatically on first start. Data (SQLite + images) lives in `backend/data/`.
+download automatically on first start. Data (SQLite + images) lives in `backend/data/`, or in
+Supabase (Postgres + Storage) when `backend/.env` is set up: see [supabase/README.md](supabase/README.md).
 
 Optional OCR (brand / visible text): `pip install easyocr` and set `LF_ENABLE_OCR=1`.
+
+## Accounts & sign-in (`app/auth.py`)
+
+Three roles: **passenger** (signs up in the app), **staff** and **admin** (created by an administrator).
+`POST /auth/register`, `POST /auth/login` (`role` = the portal: passenger/staff/admin) return a bearer token;
+send it as `Authorization: Bearer <token>`. Passwords are salted scrypt hashes; sessions store only a SHA-256
+of the token and last 30 days. Passengers only see their own reports, claims and notifications; `/staff/*`,
+intake and the pick-up desk need staff; `/admin/users` (list, create, change role / airport / password,
+disable, delete) needs an administrator. The first administrator is created on start:
+`LF_ADMIN_EMAIL` / `LF_ADMIN_PASSWORD`, else `admin@skyfindr.app` with a random password in
+`data/admin_password.txt` (also printed in the log).
 
 ## Tests
 

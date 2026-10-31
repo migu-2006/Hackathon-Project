@@ -1,5 +1,6 @@
-"""SQLite persistence. Mirrors the FoundItems / LostReports entities from the spec so the
-same documents can later be pushed to Firestore / Supabase without changing the API."""
+"""Persistence: Postgres (Supabase) when DATABASE_URL is set, otherwise a local SQLite file.
+Both use the same tables (supabase/schema.sql is the Postgres copy of SCHEMA below) and
+the same small API: insert / update / get / find / execute, documents as dicts."""
 from __future__ import annotations
 
 import json
@@ -8,8 +9,11 @@ import threading
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 from . import config
+
+POSTGRES = bool(config.DATABASE_URL)
 
 _lock = threading.Lock()
 
@@ -57,7 +61,8 @@ CREATE TABLE IF NOT EXISTS claims (
     answer TEXT,
     timestamp TEXT,
     reviewedAt TEXT,
-    status TEXT
+    status TEXT,
+    pickupCode TEXT
 );
 CREATE TABLE IF NOT EXISTS claim_attempts (
     id TEXT PRIMARY KEY,
@@ -79,6 +84,22 @@ CREATE TABLE IF NOT EXISTS notifications (
     timestamp TEXT,
     read INTEGER DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT UNIQUE,
+    name TEXT,
+    role TEXT,            -- passenger | staff | admin
+    airport TEXT,         -- staff: home airport (optional)
+    passwordHash TEXT,    -- scrypt$salt$hash
+    disabled INTEGER DEFAULT 0,
+    timestamp TEXT
+);
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,  -- SHA-256 of the bearer token (the token itself is never stored)
+    userId TEXT,
+    timestamp TEXT,
+    expiresAt TEXT
+);
 """
 
 JSON_FIELDS = {"embedding", "data"}
@@ -98,11 +119,27 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _q(name: str) -> str:
+    """Quoted column name: Postgres would otherwise lowercase camelCase (imageUrl -> imageurl)."""
+    return f'"{name}"'
+
+
+def _sql(sql: str) -> str:
+    return sql.replace("?", "%s") if POSTGRES else sql
+
+
+def _migrate_postgres(conn) -> None:
+    conn.execute((Path(__file__).resolve().parents[1] / "supabase" / "schema.sql").read_text(encoding="utf-8"))
+    conn.execute('ALTER TABLE claims ADD COLUMN IF NOT EXISTS "pickupCode" TEXT')
+    for table in ("found_items", "lost_reports"):
+        conn.execute(f'UPDATE {table} SET "airport" = %s WHERE "airport" IS NULL', (config.DEFAULT_AIRPORT,))
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     """Add columns introduced after a database was created (CREATE IF NOT EXISTS won't)."""
     for table, column in [("lost_reports", "travelDate"), ("claims", "reviewedAt"),
                           ("found_items", "airport"), ("found_items", "zoneId"), ("lost_reports", "airport"),
-                          ("found_items", "previewUrl")]:
+                          ("found_items", "previewUrl"), ("claims", "pickupCode")]:
         existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
@@ -112,23 +149,44 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-_conn = _connect()
-_conn.executescript(SCHEMA)
-_migrate(_conn)
+if POSTGRES:
+    import psycopg
+    from psycopg.rows import dict_row
+    from psycopg_pool import ConnectionPool
+
+    # Every call is one statement, so autocommit saves the COMMIT round trip (~100+ ms to Supabase).
+    # prepare_threshold=None: no server-side prepared statements (fine behind any pooler mode).
+    _pool = ConnectionPool(config.DATABASE_URL, min_size=2, max_size=8, open=True, max_idle=300,
+                           kwargs={"row_factory": dict_row, "prepare_threshold": None, "autocommit": True})
+    with _pool.connection() as _c:
+        _migrate_postgres(_c)
+
+    # A connection the server dropped while idle fails once; the pool then discards it.
+    _RETRY: tuple = (psycopg.OperationalError,)
+
+    @contextmanager
+    def tx():
+        with _pool.connection() as conn:
+            yield conn
+else:
+    _RETRY = ()
+
+    _conn = _connect()
+    _conn.executescript(SCHEMA)
+    _migrate(_conn)
+
+    @contextmanager
+    def tx():
+        with _lock:
+            try:
+                yield _conn
+                _conn.commit()
+            except Exception:
+                _conn.rollback()
+                raise
 
 
-@contextmanager
-def tx():
-    with _lock:
-        try:
-            yield _conn
-            _conn.commit()
-        except Exception:
-            _conn.rollback()
-            raise
-
-
-def _row(row: sqlite3.Row | None) -> dict | None:
+def _row(row) -> dict | None:
     if row is None:
         return None
     out = dict(row)
@@ -137,35 +195,46 @@ def _row(row: sqlite3.Row | None) -> dict | None:
     return out
 
 
+def _run(sql: str, params: tuple = (), fetch: str | None = None):
+    """One statement: fetch "one" / "all" rows, or return the affected row count."""
+    for attempt in (1, 2):
+        try:
+            with tx() as c:
+                cur = c.execute(_sql(sql), params)
+                if fetch == "one":
+                    return cur.fetchone()
+                return cur.fetchall() if fetch == "all" else cur.rowcount
+        except _RETRY:
+            if attempt == 2:
+                raise
+
+
 def insert(table: str, doc: dict) -> dict:
     values = {k: json.dumps(v) if k in JSON_FIELDS and v is not None else v for k, v in doc.items()}
-    cols = ", ".join(values)
+    cols = ", ".join(_q(k) for k in values)
     marks = ", ".join("?" for _ in values)
-    with tx() as c:
-        c.execute(f"INSERT INTO {table} ({cols}) VALUES ({marks})", tuple(values.values()))
+    _run(f"INSERT INTO {table} ({cols}) VALUES ({marks})", tuple(values.values()))
     return doc
 
 
 def update(table: str, id_: str, **fields) -> None:
-    sets = ", ".join(f"{k} = ?" for k in fields)
-    with tx() as c:
-        c.execute(f"UPDATE {table} SET {sets} WHERE id = ?", (*fields.values(), id_))
+    sets = ", ".join(f"{_q(k)} = ?" for k in fields)
+    _run(f'UPDATE {table} SET {sets} WHERE "id" = ?', (*fields.values(), id_))
 
 
 def get(table: str, id_: str) -> dict | None:
-    with tx() as c:
-        return _row(c.execute(f"SELECT * FROM {table} WHERE id = ?", (id_,)).fetchone())
+    return _row(_run(f'SELECT * FROM {table} WHERE "id" = ?', (id_,), fetch="one"))
 
 
 def find(table: str, order: str = "timestamp DESC", **filters) -> list[dict]:
     filters = {k: v for k, v in filters.items() if v is not None}
-    where = " AND ".join(f"{k} = ?" for k in filters)
-    sql = f"SELECT * FROM {table}" + (f" WHERE {where}" if where else "") + f" ORDER BY {order}"
-    with tx() as c:
-        return [_row(r) for r in c.execute(sql, tuple(filters.values())).fetchall()]
+    where = " AND ".join(f"{_q(k)} = ?" for k in filters)
+    column, *direction = order.split()
+    sql = f"SELECT * FROM {table}" + (f" WHERE {where}" if where else "") + f" ORDER BY {_q(column)} {' '.join(direction)}"
+    return [_row(r) for r in _run(sql, tuple(filters.values()), fetch="all")]
 
 
 def execute(sql: str, params: tuple = ()) -> int:
-    """Raw write (bulk updates / deletes); returns the number of rows affected."""
-    with tx() as c:
-        return c.execute(sql, params).rowcount
+    """Raw write (bulk updates / deletes) with ? placeholders and "quoted" camelCase columns;
+    returns the number of rows affected."""
+    return _run(sql, params)

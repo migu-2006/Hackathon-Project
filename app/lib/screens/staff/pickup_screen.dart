@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -17,8 +20,22 @@ class _PickupScreenState extends State<PickupScreen> {
   final _token = TextEditingController();
 
   Future<void> _scan() async {
-    final code = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => const _ScannerPage()));
+    // Phones scan on-device; the desk PC sends webcam frames to the backend's QR decoder.
+    final code = await Navigator.push<String>(context,
+        MaterialPageRoute(builder: (_) => isDesktop ? const _WebcamScannerPage() : const _ScannerPage()));
     if (code != null) _open(code);
+  }
+
+  /// A screenshot or photo of the pass (e.g. the passenger sent it by message).
+  Future<void> _scanImage() async {
+    final file = await pickPhoto(context);
+    if (file == null) return;
+    try {
+      final code = await Api.instance.scanQrImage(file);
+      if (mounted) _open(code);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   void _open(String token) {
@@ -34,27 +51,30 @@ class _PickupScreenState extends State<PickupScreen> {
         child: ListView(padding: const EdgeInsets.all(24), shrinkWrap: true, children: [
           Icon(Icons.qr_code_2, size: 96, color: Theme.of(context).colorScheme.primary),
           const SizedBox(height: 16),
-          Text(
-            isDesktop ? 'Enter the code shown under the passenger\'s QR' : 'Scan the passenger\'s pick-up QR code',
-            textAlign: TextAlign.center,
-          ),
+          const Text('Scan the passenger\'s pick-up QR code', textAlign: TextAlign.center),
           const SizedBox(height: 16),
-          // The QR scanner plugin has no Windows/Linux support; desks on PC type (or USB-scan) the code.
-          if (!isDesktop) ...[
-            FilledButton.icon(
-              onPressed: _scan,
-              icon: const Icon(Icons.qr_code_scanner),
-              label: const Text('Scan QR code'),
-              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-            ),
-            const SizedBox(height: 24),
-            const Row(children: [Expanded(child: Divider()), Text('  or enter code  '), Expanded(child: Divider())]),
-            const SizedBox(height: 16),
-          ],
+          FilledButton.icon(
+            onPressed: _scan,
+            icon: const Icon(Icons.qr_code_scanner),
+            label: Text(isDesktop ? 'Scan with webcam' : 'Scan QR code'),
+            style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _scanImage,
+            icon: const Icon(Icons.image_search),
+            label: const Text('Read QR from a screenshot'),
+          ),
+          const SizedBox(height: 24),
+          const Row(children: [Expanded(child: Divider()), Text('  or type the pickup code  '), Expanded(child: Divider())]),
+          const SizedBox(height: 16),
           TextField(
             controller: _token,
+            textCapitalization: TextCapitalization.characters,
             decoration: InputDecoration(
-              labelText: 'Claim code',
+              labelText: 'Pickup code',
+              hintText: 'e.g. K7Q-M4X',
+              helperText: 'The 6 characters under the passenger\'s QR',
               suffixIcon: IconButton(icon: const Icon(Icons.arrow_forward), onPressed: () => _open(_token.text)),
             ),
             onSubmitted: _open,
@@ -86,6 +106,84 @@ class _ScannerPageState extends State<_ScannerPage> {
             Navigator.pop(context, value);
           },
         ),
+      );
+}
+
+/// Desk PCs: mobile_scanner has no Windows support, so take webcam stills and let the backend decode them.
+class _WebcamScannerPage extends StatefulWidget {
+  const _WebcamScannerPage();
+
+  @override
+  State<_WebcamScannerPage> createState() => _WebcamScannerPageState();
+}
+
+class _WebcamScannerPageState extends State<_WebcamScannerPage> {
+  CameraController? _camera;
+  String? _error;
+  bool _running = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _start();
+  }
+
+  Future<void> _start() async {
+    try {
+      final cameras = await availableCameras();
+      // Skip IR cameras (Windows Hello): they can't see a phone screen.
+      final usable = cameras.where((c) => !c.name.toLowerCase().contains(' ir ')).toList();
+      if (usable.isEmpty) throw CameraException('none', 'No webcam found on this PC.');
+      final camera = CameraController(usable.first, ResolutionPreset.high, enableAudio: false);
+      await camera.initialize();
+      if (!mounted) return await camera.dispose();
+      setState(() => _camera = camera);
+      unawaited(_loop());
+    } on CameraException catch (e) {
+      if (mounted) setState(() => _error = e.description ?? e.code);
+    }
+  }
+
+  Future<void> _loop() async {
+    while (_running && mounted) {
+      try {
+        final code = await Api.instance.scanQrImage(await _camera!.takePicture());
+        if (_running && mounted) {
+          _running = false;
+          Navigator.pop(context, code);
+        }
+        return;
+      } on ApiException {
+        // No QR in this frame yet; keep looking.
+      } catch (e) {
+        if (mounted) setState(() => _error = '$e');
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    }
+  }
+
+  @override
+  void dispose() {
+    _running = false;
+    _camera?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Scan pick-up code')),
+        body: _error != null
+            ? EmptyState(icon: Icons.videocam_off, message: _error!)
+            : _camera == null
+                ? const Center(child: CircularProgressIndicator())
+                : Column(children: [
+                    Expanded(child: Center(child: CameraPreview(_camera!))),
+                    const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('Hold the passenger\'s QR code up to the webcam.', textAlign: TextAlign.center),
+                    ),
+                  ]),
       );
 }
 

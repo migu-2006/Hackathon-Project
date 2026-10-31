@@ -103,9 +103,47 @@ class AiAnalysis {
         text = j['text'] ?? '';
 }
 
+/// Signed-in account. Passengers register in the app; staff and administrators are created
+/// by an administrator.
+class AppUser {
+  final String id;
+  final String email;
+  final String name;
+  final String role; // passenger, staff, admin
+  final String? airport; // staff home airport
+  final bool disabled;
+
+  const AppUser({required this.id, required this.email, required this.name, required this.role, this.airport, this.disabled = false});
+
+  AppUser.fromJson(Map<String, dynamic> j)
+      : id = j['id'],
+        email = j['email'] ?? '',
+        name = j['name'] ?? '',
+        role = j['role'] ?? 'passenger',
+        airport = j['airport'],
+        disabled = (j['disabled'] ?? 0) == 1 || j['disabled'] == true;
+
+  Map<String, dynamic> toJson() =>
+      {'id': id, 'email': email, 'name': name, 'role': role, 'airport': airport, 'disabled': disabled ? 1 : 0};
+
+  bool get isStaff => role == 'staff' || role == 'admin';
+  bool get isAdmin => role == 'admin';
+  String get roleLabel => switch (role) { 'admin' => 'Administrator', 'staff' => 'Staff', _ => 'Passenger' };
+  String get initials {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return email.isEmpty ? '?' : email[0].toUpperCase();
+    return (parts.first[0] + (parts.length > 1 ? parts.last[0] : '')).toUpperCase();
+  }
+}
+
+/// "K7QM4X" -> "K7Q-M4X": easier to read aloud and type.
+String formatPickupCode(String? code) =>
+    code == null || code.length != 6 ? '—' : '${code.substring(0, 3)}-${code.substring(3)}';
+
 class Claim {
   final String id;
   final String? token; // only once staff approved the claim
+  final String? pickupCode; // 6 characters typed at the desk when the QR can't be scanned
   final String reportId;
   final String itemId;
   final String question;
@@ -116,6 +154,7 @@ class Claim {
   Claim.fromJson(Map<String, dynamic> j)
       : id = j['id'],
         token = j['token'],
+        pickupCode = j['pickupCode'],
         reportId = j['reportId'],
         itemId = j['itemId'],
         question = j['question'] ?? '',

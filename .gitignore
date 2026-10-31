@@ -17,3 +17,6 @@ dist/
 *.iml
 .DS_Store
 Thumbs.db
+
+# Secrets (Supabase keys, database password)
+.env

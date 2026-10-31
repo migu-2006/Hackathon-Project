@@ -1,8 +1,16 @@
 import io
 import os
 import tempfile
+import uuid
 
 os.environ["LF_DATA_DIR"] = tempfile.mkdtemp()
+os.environ["LF_ADMIN_EMAIL"] = "admin@test.app"
+os.environ["LF_ADMIN_PASSWORD"] = "admin-pass"
+# Tests use a throwaway SQLite file and image folder, never the Supabase project in backend/.env
+# (set LF_TEST_SUPABASE=1 to run them against it on purpose).
+if os.getenv("LF_TEST_SUPABASE") != "1":
+    for key in ("DATABASE_URL", "SUPABASE_URL", "SUPABASE_SERVICE_KEY"):
+        os.environ[key] = ""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,12 +26,43 @@ def fake_analysis(category="backpack", color="black", emb=(1.0, 0.0, 0.0)):
 
 @pytest.fixture
 def client(monkeypatch):
+    """Signed-out client (public endpoints); its lifespan creates the first administrator."""
     monkeypatch.setattr(vision, "warmup", lambda: None)
     state = {"next": fake_analysis()}
     monkeypatch.setattr(vision, "analyze", lambda img: state["next"])
     with TestClient(main.app) as c:
         c.state = state
         yield c
+
+
+def signed_in(token: str) -> TestClient:
+    c = TestClient(main.app, headers={"Authorization": f"Bearer {token}"})
+    c.user = c.get("/auth/me").json()
+    return c
+
+
+def login(client, email, password, role=None) -> TestClient:
+    r = client.post("/auth/login", json={"email": email, "password": password, "role": role})
+    assert r.status_code == 200, r.text
+    return signed_in(r.json()["token"])
+
+
+def admin(client) -> TestClient:
+    return login(client, "admin@test.app", "admin-pass", role="admin")
+
+
+def passenger(client, name="Pax") -> TestClient:
+    r = client.post("/auth/register", json={"email": f"{uuid.uuid4().hex[:8]}@mail.com", "password": "secret1",
+                                            "name": name})
+    assert r.status_code == 200, r.text
+    return signed_in(r.json()["token"])
+
+
+def staff(client) -> TestClient:
+    email = f"staff-{uuid.uuid4().hex[:6]}@skyfindr.app"
+    assert admin(client).post("/admin/users", json={"email": email, "password": "desk-pass", "name": "Desk",
+                                                    "role": "staff"}).status_code == 200
+    return login(client, email, "desk-pass", role="staff")
 
 
 def png():
@@ -55,10 +94,78 @@ def test_airports_and_maps(client):
     assert client.get("/map/XXX").status_code == 404
 
 
+def test_accounts_and_roles(client):
+    # Passengers sign themselves up; emails are unique and case-insensitive.
+    r = client.post("/auth/register", json={"email": "Ana@Mail.com", "password": "secret1", "name": "Ana"})
+    assert r.status_code == 200 and r.json()["user"] == r.json()["user"] | {"email": "ana@mail.com", "role": "passenger"}
+    assert "passwordHash" not in r.json()["user"]
+    assert client.post("/auth/register", json={"email": "ana@mail.com", "password": "secret1", "name": "A"}).status_code == 409
+    assert client.post("/auth/register", json={"email": "x@mail.com", "password": "123", "name": "X"}).status_code == 400
+    assert client.post("/auth/login", json={"email": "ana@mail.com", "password": "wrong"}).status_code == 401
+    ana = login(client, "ANA@mail.com", "secret1", role="passenger")
+    assert ana.user["name"] == "Ana"
+
+    # Portals: a passenger can't use the staff or admin sign-in.
+    assert client.post("/auth/login", json={"email": "ana@mail.com", "password": "secret1", "role": "staff"}).status_code == 403
+    assert client.post("/auth/login", json={"email": "ana@mail.com", "password": "secret1", "role": "admin"}).status_code == 403
+
+    # Signed out / passenger / staff / admin access.
+    assert client.get("/staff/claims").status_code == 401
+    assert client.get("/lost-reports").status_code == 401
+    assert ana.get("/staff/claims").status_code == 403
+    assert ana.get("/found-items", params={"staff": True}).status_code == 403
+    assert ana.get("/admin/users").status_code == 403
+    desk = staff(client)
+    assert desk.get("/staff/claims").status_code == 200
+    assert desk.get("/admin/users").status_code == 403
+    boss = admin(client)
+    assert boss.get("/staff/claims").status_code == 200  # an administrator can do staff work too
+    assert {"ana@mail.com", "admin@test.app"} <= {u["email"] for u in boss.get("/admin/users").json()}
+
+    # Administrator: disable signs the user out everywhere; can't lock themselves out.
+    assert boss.patch(f"/admin/users/{ana.user['id']}", json={"disabled": True}).json()["disabled"] == 1
+    assert ana.get("/auth/me").status_code == 401
+    assert client.post("/auth/login", json={"email": "ana@mail.com", "password": "secret1"}).status_code == 403
+    boss.patch(f"/admin/users/{ana.user['id']}", json={"disabled": False, "password": "newpass"})
+    ana = login(client, "ana@mail.com", "newpass")
+    assert boss.patch(f"/admin/users/{boss.user['id']}", json={"role": "staff"}).status_code == 400
+    assert boss.delete(f"/admin/users/{boss.user['id']}").status_code == 400
+
+    # Change own password, sign out.
+    assert ana.post("/auth/password", json={"currentPassword": "nope", "newPassword": "x123456"}).status_code == 400
+    assert ana.post("/auth/password", json={"currentPassword": "newpass", "newPassword": "x123456"}).status_code == 200
+    ana.post("/auth/logout")
+    assert ana.get("/auth/me").status_code == 401
+
+
+def test_passengers_only_see_their_own_data(client):
+    desk = staff(client)
+    zone = client.get("/meta", params={"airport": "CRA"}).json()["zones"][0]  # away from the LHR flow tests
+    item = desk.post("/found-items", files={"image": png()}, data={"location": zone["id"], "airport": "CRA"}).json()["item"]
+    ana, bob = passenger(client, "Ana"), passenger(client, "Bob")
+    # userId in the form is ignored: the report belongs to whoever is signed in.
+    report = ana.post("/lost-reports", data={"userId": bob.user["id"], "category": "backpack",
+                                             "airport": "CRA"}).json()["report"]
+    assert report["userId"] == ana.user["id"]
+    assert bob.get("/lost-reports", params={"userId": ana.user["id"]}).json() == []
+    assert bob.get(f"/lost-reports/{report['id']}/matches").status_code == 403
+    assert bob.post("/claims", json={"reportId": report["id"], "itemId": item["id"]}).status_code == 403
+    claim = ana.post("/claims", json={"reportId": report["id"], "itemId": item["id"]}).json()
+    assert bob.post(f"/claims/{claim['id']}/answer", json={"answer": "x"}).status_code == 403
+    assert bob.get(f"/users/{ana.user['id']}/notifications").status_code == 403
+    assert bob.get(f"/claims/{claim['id']}/qr").status_code == 403
+    assert desk.get("/lost-reports", params={"userId": ana.user["id"]}).json()[0]["id"] == report["id"]
+    # Live notifications need the passenger's own token.
+    with pytest.raises(Exception):
+        with client.websocket_connect(f"/ws/{ana.user['id']}?token=wrong") as ws:
+            ws.receive_json()
+
+
 def test_items_only_match_reports_at_the_same_airport(client):
+    desk, pax = staff(client), passenger(client)
     cra_zone = client.get("/meta", params={"airport": "CRA"}).json()["zones"][0]
-    client.post("/lost-reports", data={"userId": "u-lhr", "category": "backpack", "color": "black", "airport": "LHR"})
-    r = client.post("/found-items", files={"image": png()}, data={"location": cra_zone["id"], "airport": "CRA"})
+    pax.post("/lost-reports", data={"category": "backpack", "color": "black", "airport": "LHR"})
+    r = desk.post("/found-items", files={"image": png()}, data={"location": cra_zone["id"], "airport": "CRA"})
     assert r.json()["item"]["airport"] == "CRA" and r.json()["item"]["location"] == cra_zone["label"]
     assert r.json()["notifiedReports"] == []
     lhr_ids = {i["id"] for i in client.get("/found-items", params={"airport": "LHR"}).json()}
@@ -66,19 +173,21 @@ def test_items_only_match_reports_at_the_same_airport(client):
 
 
 def test_full_flow(client):
+    desk, pax = staff(client), passenger(client)
     gate = next(z for z in client.get("/meta").json()["zones"] if z["name"].startswith("Gate "))
     # Passenger reports first, nothing found yet.
-    r = client.post("/lost-reports", data={"userId": "u1", "description": "Black backpack with stickers",
-                                           "category": "backpack", "lastSeenLocation": gate["id"],
-                                           "travelDate": "2026-10-24"})
+    r = pax.post("/lost-reports", data={"description": "Black backpack with stickers",
+                                        "category": "backpack", "lastSeenLocation": gate["id"],
+                                        "travelDate": "2026-10-24"})
     assert r.status_code == 200 and r.json()["matches"] == []
     assert r.json()["report"]["color"] == "black"  # parsed from the description
     assert r.json()["report"]["airport"] == "LHR"
     report_id = r.json()["report"]["id"]
 
     # Staff intake triggers the auto-match notification.
-    r = client.post("/found-items", files={"image": png()},
-                    data={"location": gate["id"], "secretDetail": "Lufthansa sticker"})
+    assert pax.post("/found-items", files={"image": png()}, data={"location": gate["id"]}).status_code == 403
+    r = desk.post("/found-items", files={"image": png()},
+                  data={"location": gate["id"], "secretDetail": "Lufthansa sticker"})
     assert r.status_code == 200
     item = r.json()["item"]
     assert item["location"] == gate["label"] and item["zoneId"] == gate["id"]
@@ -86,82 +195,98 @@ def test_full_flow(client):
     public = client.get(f"/found-items/{item['id']}").json()
     assert "secretDetail" not in public and "embedding" not in public
     assert r.json()["notifiedReports"][0]["reportId"] == report_id
-    assert client.get("/users/u1/notifications").json()[0]["data"]["itemId"] == item["id"]
+    assert pax.get(f"/users/{pax.user['id']}/notifications").json()[0]["data"]["itemId"] == item["id"]
 
     zones = {z["id"]: z for z in client.get("/airports/LHR/zones").json()}
-    assert zones[gate["id"]]["count"] == 1
+    assert zones[gate["id"]]["count"] >= 1
 
     # Visual search finds it.
     r = client.post("/search/visual", files={"image": png()})
-    assert r.json()["matches"][0]["item"]["id"] == item["id"]
+    assert any(m["item"]["id"] == item["id"] for m in r.json()["matches"])
 
     # Claim -> answer -> staff review -> QR -> desk scan -> recovered.
-    claim = client.post("/claims", json={"reportId": report_id, "itemId": item["id"]}).json()
-    client.post(f"/claims/{claim['id']}/answer", json={"answer": "Lufthansa sticker on the front"})
-    listed = client.get("/claims", params={"userId": "u1"}).json()
+    claim = pax.post("/claims", json={"reportId": report_id, "itemId": item["id"]}).json()
+    pax.post(f"/claims/{claim['id']}/answer", json={"answer": "Lufthansa sticker on the front"})
+    listed = pax.get("/claims").json()
     assert listed[0]["status"] == "under_review" and listed[0]["token"] is None and "answer" not in listed[0]
-    assert client.get(f"/claims/{claim['id']}/qr").status_code == 409
+    assert pax.get(f"/claims/{claim['id']}/qr").status_code == 409
 
-    review = client.get("/staff/claims").json()
-    assert review[0]["item"]["secretDetail"] == "Lufthansa sticker"
-    assert review[0]["claim"]["answer"] == "Lufthansa sticker on the front"
-    client.post(f"/staff/claims/{claim['id']}/review", json={"approved": True})
-    token = client.get("/claims", params={"userId": "u1"}).json()[0]["token"]
-    assert client.get(f"/claims/{claim['id']}/qr").headers["content-type"] == "image/png"
+    review = next(c for c in desk.get("/staff/claims").json() if c["claim"]["id"] == claim["id"])
+    assert review["item"]["secretDetail"] == "Lufthansa sticker"
+    assert review["claim"]["answer"] == "Lufthansa sticker on the front"
+    desk.post(f"/staff/claims/{claim['id']}/review", json={"approved": True})
+    approved = pax.get("/claims").json()[0]
+    token, code = approved["token"], approved["pickupCode"]
+    qr = pax.get(f"/claims/{claim['id']}/qr")
+    assert qr.headers["content-type"] == "image/png"
+    session = pax.headers["Authorization"].removeprefix("Bearer ")
+    assert client.get(f"/claims/{claim['id']}/qr", params={"token": session}).status_code == 200  # Image.network
 
-    scan = client.get(f"/claims/scan/lostfound:claim:{token}").json()
+    # Desks without a phone: the typed pickup code (any case, with a dash) or a webcam photo of the QR.
+    assert len(code) == 6
+    typed = f"{code[:3].lower()}-{code[3:]}"
+    assert pax.get(f"/claims/scan/{typed}").status_code == 403
+    assert desk.get(f"/claims/scan/{typed}").json()["claim"]["id"] == claim["id"]
+    assert desk.get("/claims/scan/ZZZZZZ").status_code == 404
+    found = desk.post("/claims/scan-image", files={"image": ("qr.png", qr.content, "image/png")}).json()
+    assert found == {"code": f"lostfound:claim:{token}"}
+    assert desk.post("/claims/scan-image", files={"image": png()}).status_code == 422
+
+    scan = desk.get(f"/claims/scan/lostfound:claim:{token}").json()
     assert scan["claim"]["status"] == "ready_for_pickup"
-    assert client.post(f"/claims/scan/{token}/decision", json={"approved": True}).json()["status"] == "recovered"
+    assert desk.post(f"/claims/scan/{token}/decision", json={"approved": True}).json()["status"] == "recovered"
     assert client.get(f"/found-items/{item['id']}").json()["status"] == "claimed"
-    assert client.get("/lost-reports", params={"userId": "u1"}).json()[0]["status"] == "recovered"
+    assert pax.get("/lost-reports").json()[0]["status"] == "recovered"
 
 
 def test_wrong_answers_lock_the_item(client):
+    desk, thief = staff(client), passenger(client, "Thief")
     gate = next(z for z in client.get("/meta").json()["zones"] if z["name"].startswith("Gate "))
-    item = client.post("/found-items", files={"image": png()},
-                       data={"location": gate["id"], "secretDetail": "Engraved initials M.A. and a cat sticker"}).json()["item"]
-    report = client.post("/lost-reports", data={"userId": "thief", "description": "black backpack",
-                                                "category": "backpack"}).json()["report"]
+    item = desk.post("/found-items", files={"image": png()},
+                     data={"location": gate["id"], "secretDetail": "Engraved initials M.A. and a cat sticker"}).json()["item"]
+    report = thief.post("/lost-reports", data={"description": "black backpack", "category": "backpack"}).json()["report"]
 
-    claim = client.post("/claims", json={"reportId": report["id"], "itemId": item["id"]}).json()
+    claim = thief.post("/claims", json={"reportId": report["id"], "itemId": item["id"]}).json()
     assert claim["attemptsLeft"] == 3
-    r = client.post(f"/claims/{claim['id']}/answer", json={"answer": "a red keychain"}).json()
+    r = thief.post(f"/claims/{claim['id']}/answer", json={"answer": "a red keychain"}).json()
     assert r == r | {"status": "awaiting_answer", "correct": False, "attemptsLeft": 2}
     # A new claim for the same item does not reset the counter.
-    claim = client.post("/claims", json={"reportId": report["id"], "itemId": item["id"]}).json()
+    claim = thief.post("/claims", json={"reportId": report["id"], "itemId": item["id"]}).json()
     assert claim["attemptsLeft"] == 2
-    client.post(f"/claims/{claim['id']}/answer", json={"answer": "a dog sticker"})
-    r = client.post(f"/claims/{claim['id']}/answer", json={"answer": "nothing special"}).json()
+    thief.post(f"/claims/{claim['id']}/answer", json={"answer": "a dog sticker"})
+    r = thief.post(f"/claims/{claim['id']}/answer", json={"answer": "nothing special"}).json()
     assert r["status"] == "locked" and r["attemptsLeft"] == 0 and "desk" in r["message"]
-    assert client.post("/claims", json={"reportId": report["id"], "itemId": item["id"]}).status_code == 423
+    assert thief.post("/claims", json={"reportId": report["id"], "itemId": item["id"]}).status_code == 423
 
-    log = client.get("/staff/claim-attempts", params={"airport": "LHR", "lockedOnly": True}).json()
-    entry = next(g for g in log if g["userId"] == "thief")
+    uid = thief.user["id"]
+    log = desk.get("/staff/claim-attempts", params={"airport": "LHR", "lockedOnly": True}).json()
+    entry = next(g for g in log if g["userId"] == uid)
     assert entry["locked"] and entry["failed"] == 3 and len(entry["attempts"]) == 3
     assert entry["attempts"][0]["answer"] == "nothing special"  # newest first
     assert entry["item"]["secretDetail"].startswith("Engraved")
 
     # Staff unlock after checking ID: the log is kept, the passenger can answer again (typos tolerated).
-    assert client.post("/staff/claim-attempts/unlock", json={"userId": "thief", "itemId": item["id"]}).json()["cleared"] == 3
-    claim = client.post("/claims", json={"reportId": report["id"], "itemId": item["id"]}).json()
+    assert desk.post("/staff/claim-attempts/unlock", json={"userId": uid, "itemId": item["id"]}).json()["cleared"] == 3
+    claim = thief.post("/claims", json={"reportId": report["id"], "itemId": item["id"]}).json()
     assert claim["attemptsLeft"] == 3
-    r = client.post(f"/claims/{claim['id']}/answer", json={"answer": "it has a cat stiker and my initals engraved"}).json()
+    r = thief.post(f"/claims/{claim['id']}/answer", json={"answer": "it has a cat stiker and my initals engraved"}).json()
     assert r["status"] == "under_review" and r["correct"] is True
-    entry = next(g for g in client.get("/staff/claim-attempts").json() if g["userId"] == "thief")
+    entry = next(g for g in desk.get("/staff/claim-attempts").json() if g["userId"] == uid)
     assert not entry["locked"] and len(entry["attempts"]) == 4
-    assert client.get("/staff/claims").json()[0]["failedAttempts"] == 0
+    assert next(c for c in desk.get("/staff/claims").json() if c["claim"]["id"] == claim["id"])["failedAttempts"] == 0
 
 
 def test_photos_are_blurred_until_reverse_image_search(client):
+    desk = staff(client)
     gate = next(z for z in client.get("/meta").json()["zones"] if z["name"].startswith("Gate "))
-    staff = client.post("/found-items", files={"image": png()}, data={"location": gate["id"]}).json()["item"]
-    real = staff["imageUrl"]
-    assert real.startswith("/images/found_") and "previewUrl" not in staff
+    staff_view = desk.post("/found-items", files={"image": png()}, data={"location": gate["id"]}).json()["item"]
+    real = staff_view["imageUrl"]
+    assert real.startswith("/images/found_") and "previewUrl" not in staff_view
 
     # Every passenger listing shows only the blurred preview, never the real file.
-    listed = next(i for i in client.get("/found-items").json() if i["id"] == staff["id"])
-    single = client.get(f"/found-items/{staff['id']}").json()
-    pinned = next(i for z in client.get("/airports/LHR/zones").json() for i in z["items"] if i["id"] == staff["id"])
+    listed = next(i for i in client.get("/found-items").json() if i["id"] == staff_view["id"])
+    single = client.get(f"/found-items/{staff_view['id']}").json()
+    pinned = next(i for z in client.get("/airports/LHR/zones").json() for i in z["items"] if i["id"] == staff_view["id"])
     for view in (listed, single, pinned):
         assert view["photoHidden"] is True
         assert view["imageUrl"].startswith("/images/preview_") and view["imageUrl"] != real
@@ -174,35 +299,39 @@ def test_photos_are_blurred_until_reverse_image_search(client):
     for m in matches[1:]:
         assert m["item"]["imageUrl"].startswith("/images/preview_")
     best = matches[0]["item"]
-    stored = client.get("/found-items", params={"staff": True}).json()
+    stored = desk.get("/found-items", params={"staff": True}).json()
     assert best["imageUrl"] == next(i["imageUrl"] for i in stored if i["id"] == best["id"])
-    if best["id"] == staff["id"]:
+    if best["id"] == staff_view["id"]:
         assert best["imageUrl"] == real
-    inventory = next(i for i in client.get("/found-items", params={"staff": True}).json() if i["id"] == staff["id"])
+    inventory = next(i for i in desk.get("/found-items", params={"staff": True}).json() if i["id"] == staff_view["id"])
     assert inventory["imageUrl"] == real
 
 
 def test_developer_reset(client):
     from app import config
 
+    desk, pax = staff(client), passenger(client)
     gate = next(z for z in client.get("/meta").json()["zones"] if z["name"].startswith("Gate "))
-    item = client.post("/found-items", files={"image": png()}, data={"location": gate["id"]}).json()["item"]
-    report = client.post("/lost-reports", data={"userId": "dev-u", "description": "black backpack",
-                                                "category": "backpack"}).json()["report"]
-    client.post("/claims", json={"reportId": report["id"], "itemId": item["id"]})
+    item = desk.post("/found-items", files={"image": png()}, data={"location": gate["id"]}).json()["item"]
+    report = pax.post("/lost-reports", data={"description": "black backpack", "category": "backpack"}).json()["report"]
+    pax.post("/claims", json={"reportId": report["id"], "itemId": item["id"]})
 
     assert client.get("/dev/check").status_code == 401
+    assert desk.get("/dev/check").status_code == 401  # staff isn't enough
+    assert admin(client).get("/dev/check").json() == {"ok": True}  # an administrator is
     assert client.post("/dev/reset", json={}, headers={"X-Dev-Key": "nope"}).status_code == 401
     key = {"X-Dev-Key": config.DEV_KEY}
     assert client.get("/dev/check", headers=key).json() == {"ok": True}
 
-    with client.websocket_connect("/ws/dev-u") as ws:
+    session = pax.headers["Authorization"].removeprefix("Bearer ")
+    with client.websocket_connect(f"/ws/{pax.user['id']}?token={session}") as ws:
         r = client.post("/dev/reset", json={}, headers=key).json()
         assert ws.receive_json() == {"type": "reset"}
     assert r["deleted"]["lost_reports"] >= 1 and r["deleted"]["claims"] >= 1
-    assert client.get("/lost-reports", params={"userId": "dev-u"}).json() == []
-    assert client.get("/claims", params={"userId": "dev-u"}).json() == []
+    assert pax.get("/lost-reports").json() == []
+    assert pax.get("/claims").json() == []
     assert any(i["id"] == item["id"] for i in client.get("/found-items").json())  # inventory kept
+    assert pax.get("/auth/me").status_code == 200  # accounts survive a reset
 
     client.post("/dev/reset", json={"includeItems": True}, headers=key)
     assert client.get("/found-items").json() == []

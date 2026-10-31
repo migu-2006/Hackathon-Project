@@ -4,6 +4,7 @@ import '../../app_state.dart';
 import '../../models.dart';
 import '../../ui.dart';
 
+import '../account.dart';
 import 'attempts_screen.dart';
 import 'intake_screen.dart';
 import 'inventory_screen.dart';
@@ -22,6 +23,18 @@ class _StaffHomeState extends State<StaffHome> {
   final _inventoryKey = GlobalKey<InventoryScreenState>();
   final _reviewKey = GlobalKey<ReviewScreenState>();
   final _attemptsKey = GlobalKey<AttemptsScreenState>();
+
+  @override
+  void initState() {
+    super.initState();
+    // Staff start at their home airport (set by the administrator).
+    final home = AppData.instance.user?.airport;
+    if (home != null && home != AppData.instance.airport.code) {
+      AppData.instance.setAirport(home);
+    } else if (AppData.instance.zones.isEmpty) {
+      AppData.instance.refresh();
+    }
+  }
 
   /// After intake: confirm, then show the item in the inventory.
   void _onRegistered(FoundItem item, int notified) {
@@ -79,6 +92,8 @@ class _StaffHomeState extends State<StaffHome> {
               ),
             ),
           ),
+          const AccountButton(),
+          const SizedBox(width: 8),
         ],
       ),
       body: IndexedStack(index: _tab, children: pages),

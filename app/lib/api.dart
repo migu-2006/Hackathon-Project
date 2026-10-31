@@ -31,6 +31,14 @@ class Api {
   /// Replaceable for tests (package:http/testing.dart MockClient).
   http.Client client = http.Client();
 
+  /// Session token of the signed-in account, sent as `Authorization: Bearer ...`.
+  String? token;
+
+  /// Called when the server rejects the session (expired, signed out elsewhere, account disabled).
+  void Function()? onUnauthorized;
+
+  Map<String, String> get _auth => token == null ? {} : {'Authorization': 'Bearer $token'};
+
   String imageUrl(String path) => path.startsWith('http') ? path : '$baseUrl$path';
 
   Uri _uri(String path, [Map<String, String?>? query]) {
@@ -40,6 +48,7 @@ class Api {
 
   dynamic _decode(http.Response r) {
     final body = r.body.isEmpty ? null : jsonDecode(utf8.decode(r.bodyBytes));
+    if (r.statusCode == 401 && token != null) onUnauthorized?.call();
     if (r.statusCode >= 400) {
       final detail = body is Map ? body['detail'] : null;
       throw ApiException(detail is String ? detail : 'Request failed (${r.statusCode})');
@@ -48,17 +57,25 @@ class Api {
   }
 
   Future<dynamic> _get(String path, [Map<String, String?>? query, Map<String, String>? headers]) async =>
-      _decode(await client.get(_uri(path, query), headers: headers));
+      _decode(await client.get(_uri(path, query), headers: {..._auth, ...?headers}));
 
   Future<dynamic> _postJson(String path, Map<String, dynamic> body, {Map<String, String>? headers}) async =>
       _decode(await client.post(
         _uri(path),
-        headers: {'Content-Type': 'application/json', ...?headers},
+        headers: {'Content-Type': 'application/json', ..._auth, ...?headers},
         body: jsonEncode(body),
       ));
 
+  Future<dynamic> _patchJson(String path, Map<String, dynamic> body) async => _decode(await client.patch(
+        _uri(path),
+        headers: {'Content-Type': 'application/json', ..._auth},
+        body: jsonEncode(body),
+      ));
+
+  Future<dynamic> _delete(String path) async => _decode(await client.delete(_uri(path), headers: _auth));
+
   Future<dynamic> _postMultipart(String path, Map<String, String?> fields, {XFile? image}) async {
-    final req = http.MultipartRequest('POST', _uri(path));
+    final req = http.MultipartRequest('POST', _uri(path))..headers.addAll(_auth);
     fields.forEach((k, v) {
       if (v != null && v.isNotEmpty) req.fields[k] = v;
     });
@@ -69,6 +86,47 @@ class Api {
     }
     return _decode(await http.Response.fromStream(await client.send(req)));
   }
+
+  // ---------------------------------------------------------------- Accounts
+
+  Future<({String token, AppUser user})> _session(dynamic r) async =>
+      (token: r['token'] as String, user: AppUser.fromJson(r['user']));
+
+  /// [role] is the portal signed in from (passenger / staff / admin); the server refuses
+  /// e.g. a passenger account on the staff sign-in.
+  Future<({String token, AppUser user})> login(String email, String password, {String? role}) async =>
+      _session(await _postJson('/auth/login', {'email': email, 'password': password, 'role': role}));
+
+  /// Passenger self sign-up.
+  Future<({String token, AppUser user})> register(String name, String email, String password) async =>
+      _session(await _postJson('/auth/register', {'name': name, 'email': email, 'password': password}));
+
+  Future<AppUser> me() async => AppUser.fromJson(await _get('/auth/me'));
+
+  Future<void> logout() async => _postJson('/auth/logout', {});
+
+  Future<void> changePassword(String current, String next) async =>
+      _postJson('/auth/password', {'currentPassword': current, 'newPassword': next});
+
+  // Administrator
+  Future<List<AppUser>> users({String? role}) async =>
+      [for (final u in await _get('/admin/users', {'role': role})) AppUser.fromJson(u)];
+
+  Future<AppUser> createUser({required String name, required String email, required String password,
+          required String role, String? airport}) async =>
+      AppUser.fromJson(await _postJson('/admin/users',
+          {'name': name, 'email': email, 'password': password, 'role': role, 'airport': airport}));
+
+  Future<AppUser> updateUser(String id, {String? name, String? role, String? airport, bool? disabled, String? password}) async =>
+      AppUser.fromJson(await _patchJson('/admin/users/$id', {
+        'name': ?name,
+        'role': ?role,
+        'airport': ?airport,
+        'disabled': ?disabled,
+        'password': ?password,
+      }));
+
+  Future<void> deleteUser(String id) async => _delete('/admin/users/$id');
 
   // ---------------------------------------------------------------- Smart Intake (staff)
 
@@ -176,7 +234,7 @@ class Api {
       [for (final n in await _get('/users/$userId/notifications')) AppNotification.fromJson(n)];
 
   WebSocketChannel notificationStream(String userId) =>
-      WebSocketChannel.connect(Uri.parse('${baseUrl.replaceFirst('http', 'ws')}/ws/$userId'));
+      WebSocketChannel.connect(Uri.parse('${baseUrl.replaceFirst('http', 'ws')}/ws/$userId?token=${Uri.encodeComponent(token ?? '')}'));
 
   // ---------------------------------------------------------------- Claim & Pick-up
 
@@ -194,7 +252,8 @@ class Api {
     return (status: r['status'] as String, attemptsLeft: (r['attemptsLeft'] as num?)?.toInt(), message: r['message'] as String?);
   }
 
-  String claimQrUrl(String claimId) => '$baseUrl/claims/$claimId/qr';
+  /// The token in the URL lets Image.network load it (the pass belongs to the signed-in passenger).
+  String claimQrUrl(String claimId) => '$baseUrl/claims/$claimId/qr?token=${Uri.encodeComponent(token ?? '')}';
 
   Future<List<Claim>> claims(String userId) async =>
       [for (final c in await _get('/claims', {'userId': userId})) Claim.fromJson(c)];
@@ -215,6 +274,10 @@ class Api {
 
   Future<void> reviewClaim(String claimId, bool approved) async =>
       _postJson('/staff/claims/$claimId/review', {'approved': approved});
+
+  /// Finds the pick-up QR in a photo (desk webcam frame or a screenshot); returns its content.
+  Future<String> scanQrImage(XFile image) async =>
+      (await _postMultipart('/claims/scan-image', {}, image: image))['code'];
 
   Future<Map<String, dynamic>> scanClaim(String token) async =>
       Map<String, dynamic>.from(await _get('/claims/scan/${Uri.encodeComponent(token)}'));

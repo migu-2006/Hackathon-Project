@@ -8,7 +8,11 @@ import 'package:lost_found_app/ui.dart';
 import 'package:lost_found_app/widgets.dart';
 
 void main() {
-  setUp(() => AppData.instance.userId = 'pax-test');
+  setUp(() {
+    AppData.instance.userId = 'pax-test';
+    AppData.instance.session.value =
+        const AppUser(id: 'pax-test', email: 'ana@mail.com', name: 'Ana Pop', role: 'passenger');
+  });
 
   testWidgets('home shows the SkyFindr landing page in light and dark', (tester) async {
     tester.view.physicalSize = const Size(1170, 2532);

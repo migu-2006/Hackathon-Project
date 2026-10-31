@@ -16,14 +16,15 @@ import unicodedata
 from contextlib import asynccontextmanager
 
 import qrcode
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageFilter, UnidentifiedImageError
 from pydantic import BaseModel
 
-from . import config, matching, storage, vision
+from . import auth, config, images, matching, storage, vision
+from .auth import current_user, optional_user, require_self_or_staff, require_staff
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("lostfound")
@@ -33,6 +34,7 @@ log = logging.getLogger("lostfound")
 async def lifespan(_: FastAPI):
     # Load YOLO weights at startup so the first intake request is fast.
     await asyncio.to_thread(vision.warmup)
+    auth.ensure_admin()
     log.info("Developer key (app: Help > Account, tap the passenger ID 7 times): %s", config.DEV_KEY)
     yield
 
@@ -40,6 +42,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Smart Airport Lost & Found", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.mount("/images", StaticFiles(directory=config.IMAGES_DIR), name="images")
+app.include_router(auth.router)
 
 
 # ---------------------------------------------------------------- realtime notifications
@@ -82,7 +85,12 @@ notifier = Notifier()
 
 
 @app.websocket("/ws/{user_id}")
-async def ws_notifications(ws: WebSocket, user_id: str):
+async def ws_notifications(ws: WebSocket, user_id: str, token: str | None = None):
+    """Live notifications for the signed-in passenger (?token=<session token>)."""
+    user = auth.user_for_token(token)
+    if not user or user["id"] != user_id:
+        await ws.close(code=4401)
+        return
     await notifier.connect(user_id, ws)
     try:
         while True:
@@ -92,7 +100,8 @@ async def ws_notifications(ws: WebSocket, user_id: str):
 
 
 @app.get("/users/{user_id}/notifications")
-def list_notifications(user_id: str):
+def list_notifications(user_id: str, user: dict = Depends(current_user)):
+    require_self_or_staff(user, user_id)
     return storage.find("notifications", userId=user_id)
 
 
@@ -109,10 +118,8 @@ async def _read_image(upload: UploadFile) -> tuple[Image.Image, bytes]:
 
 
 def _save_image(img: Image.Image, prefix: str) -> str:
-    name = f"{prefix}_{storage.new_id()}.jpg"
     img.thumbnail((1280, 1280))
-    img.save(config.IMAGES_DIR / name, "JPEG", quality=85)
-    return f"/images/{name}"
+    return images.save(img, f"{prefix}_{storage.new_id()}.jpg", quality=85)
 
 
 def _save_preview(img: Image.Image) -> str:
@@ -121,9 +128,7 @@ def _save_preview(img: Image.Image) -> str:
     small = img.copy()
     small.thumbnail((360, 360))
     small = small.filter(ImageFilter.GaussianBlur(max(small.size) / 28))  # shape + colour, no text/stickers
-    name = f"preview_{storage.new_id()}.jpg"
-    small.save(config.IMAGES_DIR / name, "JPEG", quality=70)
-    return f"/images/{name}"
+    return images.save(small, f"preview_{storage.new_id()}.jpg", quality=70)
 
 
 def _preview_url(item: dict) -> str | None:
@@ -131,7 +136,7 @@ def _preview_url(item: dict) -> str | None:
     if item.get("previewUrl") or not item.get("imageUrl"):
         return item.get("previewUrl")
     try:
-        with Image.open(config.IMAGES_DIR / item["imageUrl"].rsplit("/", 1)[-1]) as img:
+        with images.open_image(item["imageUrl"]) as img:
             url = _save_preview(img.convert("RGB"))
     except OSError:
         return None
@@ -200,7 +205,7 @@ async def _notify_match(report: dict, match: dict):
 # ---------------------------------------------------------------- Modul A: Smart Intake (staff)
 
 @app.post("/intake/analyze", tags=["Smart Intake"])
-async def analyze_image(image: UploadFile = File(...)):
+async def analyze_image(image: UploadFile = File(...), _: dict = Depends(require_staff)):
     """Preview the AI attributes before the operator confirms the intake."""
     img, _ = await _read_image(image)
     analysis = await asyncio.to_thread(vision.analyze, img)
@@ -216,6 +221,7 @@ async def create_found_item(
     color: str | None = Form(None, description="Override the AI color"),
     notes: str | None = Form(None),
     secretDetail: str | None = Form(None, description="Hidden detail used to verify ownership"),
+    _: dict = Depends(require_staff),
 ):
     airport = _airport(airport)
     img, _ = await _read_image(image)
@@ -253,15 +259,20 @@ async def create_found_item(
 
 @app.get("/found-items", tags=["Found Items"])
 def list_found_items(airport: str | None = None, category: str | None = None, color: str | None = None,
-                     zoneId: str | None = None, status: str | None = "available", staff: bool = False):
-    """Passengers get blurred photos; `staff=true` (inventory) gets the real ones."""
+                     zoneId: str | None = None, status: str | None = "available", staff: bool = False,
+                     user: dict | None = Depends(optional_user)):
+    """Passengers get blurred photos; `staff=true` (inventory, staff accounts) gets the real ones."""
+    if staff and not auth.is_staff(user):
+        raise HTTPException(403, "Airport staff only")
     items = storage.find("found_items", airport=_airport(airport), category=category, color=color,
                          zoneId=zoneId, status=status)
     return [_staff_item(i) if staff else _public_item(i) for i in items]
 
 
 @app.get("/found-items/{item_id}", tags=["Found Items"])
-def get_found_item(item_id: str, staff: bool = False):
+def get_found_item(item_id: str, staff: bool = False, user: dict | None = Depends(optional_user)):
+    if staff and not auth.is_staff(user):
+        raise HTTPException(403, "Airport staff only")
     item = storage.get("found_items", item_id)
     if not item:
         raise HTTPException(404, "Item not found")
@@ -284,7 +295,7 @@ async def visual_search(image: UploadFile = File(...), limit: int = Form(10), ai
 
 @app.post("/lost-reports", tags=["Passenger"])
 async def create_lost_report(
-    userId: str = Form(...),
+    userId: str | None = Form(None, description="Ignored: reports belong to the signed-in passenger"),
     description: str = Form(""),
     airport: str | None = Form(None),
     category: str | None = Form(None),
@@ -292,6 +303,7 @@ async def create_lost_report(
     lastSeenLocation: str | None = Form(None),
     travelDate: str | None = Form(None, description="YYYY-MM-DD"),
     image: UploadFile | None = File(None),
+    user: dict = Depends(current_user),
 ):
     airport = _airport(airport)
     imageUrl, embedding = None, None
@@ -308,7 +320,7 @@ async def create_lost_report(
 
     report = storage.insert("lost_reports", {
         "id": storage.new_id(),
-        "userId": userId,
+        "userId": user["id"],
         "airport": airport,
         "description": description,
         "category": category.lower(),
@@ -331,15 +343,18 @@ async def create_lost_report(
 
 
 @app.get("/lost-reports", tags=["Passenger"])
-def list_lost_reports(userId: str | None = None, status: str | None = None):
+def list_lost_reports(userId: str | None = None, status: str | None = None, user: dict = Depends(current_user)):
+    if not auth.is_staff(user):
+        userId = user["id"]  # passengers only ever see their own
     return [_public_report(r) for r in storage.find("lost_reports", userId=userId, status=status)]
 
 
 @app.get("/lost-reports/{report_id}/matches", tags=["Passenger"])
-def report_matches(report_id: str, limit: int = 10):
+def report_matches(report_id: str, limit: int = 10, user: dict = Depends(current_user)):
     report = storage.get("lost_reports", report_id)
     if not report:
         raise HTTPException(404, "Report not found")
+    require_self_or_staff(user, report["userId"])
     matches = matching.rank(report, _available_items(report["airport"]), limit=limit, min_score=0.2)
     return [_public_match(m) for m in matches]
 
@@ -444,18 +459,45 @@ def _get_claim(claim_id: str) -> dict:
     return claim
 
 
+# No 0/O, 1/I/L: the code is read aloud and typed at the desk.
+_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def _ensure_pickup_code(claim: dict) -> dict:
+    """Short code shown under the QR, for desks that can't scan. Created on approval
+    (or lazily for claims approved before codes existed)."""
+    if claim.get("pickupCode"):
+        return claim
+    while True:
+        code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(6))
+        if not storage.find("claims", pickupCode=code):
+            break
+    storage.update("claims", claim["id"], pickupCode=code)
+    return {**claim, "pickupCode": code}
+
+
 def _public_claim(claim: dict) -> dict:
-    """Passenger view: the answer stays private and the QR token only exists once approved."""
+    """Passenger view: the answer stays private; the QR token and pickup code only exist once approved."""
+    if claim["status"] in ("ready_for_pickup", "recovered"):
+        claim = _ensure_pickup_code(claim)
     out = {k: v for k, v in claim.items() if k != "answer"}
     if claim["status"] not in ("ready_for_pickup", "recovered"):
         out["token"] = None
+        out["pickupCode"] = None
     return out
 
 
-def _claim_by_token(token: str) -> dict:
-    claims = storage.find("claims", token=token.removeprefix("lostfound:claim:"))
+def _claim_by_token(value: str) -> dict:
+    """Accepts the scanned QR content, its bare token, or the pickup code typed at the desk
+    (any case, with or without spaces/dashes)."""
+    value = value.strip().removeprefix("lostfound:claim:")
+    claims = storage.find("claims", token=value)
     if not claims:
-        raise HTTPException(404, "Unknown QR code")
+        code = re.sub(r"[^A-Z0-9]", "", value.upper())
+        if len(code) == 6:
+            claims = storage.find("claims", pickupCode=code)
+    if not claims:
+        raise HTTPException(404, "Unknown pickup code. Check the code under the passenger's QR.")
     return claims[0]
 
 
@@ -470,11 +512,13 @@ def _staff_claim_view(claim: dict) -> dict:
 
 
 @app.post("/claims", tags=["Claim & Pick-up"])
-def create_claim(body: ClaimCreate):
+def create_claim(body: ClaimCreate, user: dict = Depends(current_user)):
     report = storage.get("lost_reports", body.reportId)
     item = storage.get("found_items", body.itemId)
     if not report or not item:
         raise HTTPException(404, "Report or item not found")
+    if report["userId"] != user["id"]:
+        raise HTTPException(403, "You can only claim items for your own reports")
     if item["status"] != "available":
         raise HTTPException(409, "Item is no longer available")
     failed = _failed_attempts(report["userId"], item["id"])
@@ -497,17 +541,20 @@ def create_claim(body: ClaimCreate):
 
 
 @app.get("/claims", tags=["Claim & Pick-up"])
-def list_claims(userId: str):
+def list_claims(userId: str | None = None, user: dict = Depends(current_user)):
     """A passenger's claims with their review status (and pick-up token once approved)."""
+    userId = userId if auth.is_staff(user) and userId else user["id"]
     return [_public_claim(c) for c in storage.find("claims", userId=userId)]
 
 
 @app.post("/claims/{claim_id}/answer", tags=["Claim & Pick-up"])
-def answer_claim(claim_id: str, body: ClaimAnswer):
+def answer_claim(claim_id: str, body: ClaimAnswer, user: dict = Depends(current_user)):
     """Checks the answer against the item's hidden detail and logs the attempt for staff.
     Right (or nothing to compare with) -> staff review. Wrong -> try again, until
     MAX_CLAIM_ATTEMPTS wrong answers lock the passenger out of this item."""
     claim = _get_claim(claim_id)
+    if claim["userId"] != user["id"]:
+        raise HTTPException(403, "This claim belongs to another passenger")
     if claim["status"] != "awaiting_answer":
         raise HTTPException(409, f"Claim is {claim['status']}")
     item = storage.get("found_items", claim["itemId"])
@@ -535,8 +582,13 @@ def answer_claim(claim_id: str, body: ClaimAnswer):
 
 
 @app.get("/claims/{claim_id}/qr", tags=["Claim & Pick-up"])
-def claim_qr(claim_id: str):
+def claim_qr(claim_id: str, token: str | None = None, user: dict | None = Depends(optional_user)):
+    """QR image of the pick-up pass (owner or staff; `?token=` works for plain image loaders)."""
     claim = _get_claim(claim_id)
+    user = user or auth.user_for_token(token)
+    if not user:
+        raise HTTPException(401, "Please sign in")
+    require_self_or_staff(user, claim["userId"])
     if claim["status"] not in ("ready_for_pickup", "recovered"):
         raise HTTPException(409, "The pick-up pass is available once staff approve the claim")
     buf = io.BytesIO()
@@ -547,7 +599,7 @@ def claim_qr(claim_id: str):
 # Ownership review (staff, remote) -----------------------------------------------------------
 
 @app.get("/staff/claims", tags=["Claim & Pick-up"])
-def staff_claims(status: str = "under_review"):
+def staff_claims(status: str = "under_review", _: dict = Depends(require_staff)):
     """Claims waiting for an ownership decision, with the hidden detail to compare against."""
     return [_staff_claim_view(c) for c in storage.find("claims", status=status)]
 
@@ -558,7 +610,7 @@ class Unlock(BaseModel):
 
 
 @app.get("/staff/claim-attempts", tags=["Claim & Pick-up"])
-def claim_attempts(airport: str | None = None, lockedOnly: bool = False):
+def claim_attempts(airport: str | None = None, lockedOnly: bool = False, _: dict = Depends(require_staff)):
     """Verification log: every answer a passenger typed for an item, grouped per passenger + item,
     with how many wrong answers count towards the lock and whether they are locked out."""
     groups: dict[tuple[str, str], dict] = {}
@@ -584,7 +636,7 @@ def claim_attempts(airport: str | None = None, lockedOnly: bool = False):
 
 
 @app.post("/staff/claim-attempts/unlock", tags=["Claim & Pick-up"])
-async def unlock_claims(body: Unlock):
+async def unlock_claims(body: Unlock, _: dict = Depends(require_staff)):
     """Staff checked the passenger in person: wrong answers stop counting (they stay in the log)."""
     wrong = storage.find("claim_attempts", userId=body.userId, itemId=body.itemId, result="wrong", cleared=0)
     for a in wrong:
@@ -598,12 +650,13 @@ async def unlock_claims(body: Unlock):
 
 
 @app.post("/staff/claims/{claim_id}/review", tags=["Claim & Pick-up"])
-async def review_claim(claim_id: str, body: ClaimDecision):
+async def review_claim(claim_id: str, body: ClaimDecision, _: dict = Depends(require_staff)):
     claim = _get_claim(claim_id)
     if claim["status"] != "under_review":
         raise HTTPException(409, f"Claim is {claim['status']}")
     if body.approved:
         storage.update("claims", claim_id, status="ready_for_pickup", reviewedAt=storage.now())
+        _ensure_pickup_code(claim)
         item = storage.get("found_items", claim["itemId"])
         desk = config.AIRPORTS.get(item.get("airport") or config.DEFAULT_AIRPORT, {}).get("desk", "Lost Property desk")
         await notifier.send(claim["userId"], "Ready for pickup",
@@ -619,14 +672,30 @@ async def review_claim(claim_id: str, body: ClaimDecision):
 
 # Pick-up desk ---------------------------------------------------------------------------------
 
+@app.post("/claims/scan-image", tags=["Claim & Pick-up"])
+async def scan_qr_image(image: UploadFile = File(...), _: dict = Depends(require_staff)):
+    """Finds a pick-up QR in a photo (webcam frame or screenshot) for desks without a phone scanner."""
+    import cv2
+    import numpy as np
+
+    img, _ = await _read_image(image)
+    gray = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2GRAY)
+    detector = cv2.QRCodeDetector()
+    for frame in (gray, cv2.resize(gray, None, fx=2, fy=2)):  # small QRs decode better upscaled
+        value, _, _ = detector.detectAndDecode(frame)
+        if value.startswith("lostfound:claim:"):
+            return {"code": value}
+    raise HTTPException(422, "No pick-up QR code found in the image")
+
+
 @app.get("/claims/scan/{token}", tags=["Claim & Pick-up"])
-def scan_claim(token: str):
+def scan_claim(token: str, _: dict = Depends(require_staff)):
     """Operator view after scanning the QR: the passenger's answer next to the hidden details."""
     return _staff_claim_view(_claim_by_token(token))
 
 
 @app.post("/claims/scan/{token}/decision", tags=["Claim & Pick-up"])
-async def decide_claim(token: str, body: ClaimDecision):
+async def decide_claim(token: str, body: ClaimDecision, _: dict = Depends(require_staff)):
     claim = _claim_by_token(token)
     if claim["status"] != "ready_for_pickup":
         raise HTTPException(409, f"Claim is {claim['status']}")
@@ -656,24 +725,28 @@ class ResetRequest(BaseModel):
     includeItems: bool = False
 
 
-def _require_dev(key: str | None):
+def _require_dev(key: str | None, user: dict | None = None):
+    """Developer key (X-Dev-Key header) or a signed-in administrator."""
+    if user and user["role"] == "admin":
+        return
     if not key or not secrets.compare_digest(key, config.DEV_KEY):
         raise HTTPException(401, "Wrong developer key")
 
 
 @app.get("/dev/check", tags=["Developer"])
-def dev_check(x_dev_key: str | None = Header(None)):
+def dev_check(x_dev_key: str | None = Header(None), user: dict | None = Depends(optional_user)):
     """Lets the app unlock its developer tools (send the key in the X-Dev-Key header)."""
-    _require_dev(x_dev_key)
+    _require_dev(x_dev_key, user)
     return {"ok": True}
 
 
 @app.post("/dev/reset", tags=["Developer"])
-async def dev_reset(body: ResetRequest, x_dev_key: str | None = Header(None)):
+async def dev_reset(body: ResetRequest, x_dev_key: str | None = Header(None),
+                    user: dict | None = Depends(optional_user)):
     """Demo reset: delete every passenger request (lost reports, claims, verification attempts,
     notifications) and put found items back on the shelf. With includeItems, empty the inventory too.
     Connected apps get a live {"type": "reset"} event and clear their screens."""
-    _require_dev(x_dev_key)
+    _require_dev(x_dev_key, user)
     deleted = {t: storage.execute(f"DELETE FROM {t}") for t in ("lost_reports", "claims", "claim_attempts", "notifications")}
     prefixes = ("lost_",)
     if body.includeItems:
@@ -681,9 +754,7 @@ async def dev_reset(body: ResetRequest, x_dev_key: str | None = Header(None)):
         prefixes += ("found_", "preview_")
     else:
         deleted["itemsBackOnShelf"] = storage.execute("UPDATE found_items SET status = 'available' WHERE status != 'available'")
-    for f in config.IMAGES_DIR.iterdir():
-        if f.name.startswith(prefixes):
-            f.unlink(missing_ok=True)
+    deleted["photos"] = images.delete_prefixed(prefixes)
     log.warning("Developer reset: %s", deleted)
     await notifier.broadcast({"type": "reset"})
     return {"deleted": deleted}

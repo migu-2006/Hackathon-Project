@@ -74,7 +74,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
     if (ok != true) return;
     setState(() => _busy = true);
     try {
-      final deleted = await Api.instance.devReset(AppData.instance.devKey!, includeItems: _includeItems);
+      final deleted = await Api.instance.devReset(AppData.instance.devKey ?? '', includeItems: _includeItems); // admins need no key
       await AppShell.resetAll(); // this device; others are told by the server
       if (!mounted) return;
       setState(() => _last = deleted);

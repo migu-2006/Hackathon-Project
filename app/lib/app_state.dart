@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -15,7 +17,10 @@ class AppData extends ChangeNotifier {
   /// Scores at or above this count as "Potential match" (same as the backend auto-match threshold).
   static const matchThreshold = 0.55;
 
-  late String userId;
+  /// Signed-in account (null: show the sign-in page). Passengers' reports and claims belong to it.
+  final session = ValueNotifier<AppUser?>(null);
+  AppUser? get user => session.value;
+  String userId = '';
   Airport airport = Airport.fallback;
   List<Airport> airports = const [Airport.fallback];
   List<Zone> zones = [];
@@ -50,8 +55,69 @@ class AppData extends ChangeNotifier {
     await refresh();
   }
 
-  Future<void> loadPrefs(SharedPreferences prefs, String userId) async {
-    this.userId = userId;
+  /// Remembers the session on this device and opens the matching part of the app.
+  Future<void> signIn(String token, AppUser user) async {
+    Api.instance.token = token;
+    userId = user.id;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('token', token);
+    await prefs.setString('user', jsonEncode(user.toJson()));
+    _forgetPassengerData();
+    session.value = user;
+  }
+
+  /// Back to the sign-in page. [server] false: the server already ended the session.
+  Future<void> signOut({bool server = true}) async {
+    if (server && Api.instance.token != null) {
+      try {
+        await Api.instance.logout();
+      } catch (_) {
+        // Offline: the token is forgotten here anyway.
+      }
+    }
+    Api.instance.token = null;
+    userId = '';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('token');
+    await prefs.remove('user');
+    _forgetPassengerData();
+    session.value = null;
+  }
+
+  void _forgetPassengerData() {
+    reports = [];
+    claims = [];
+    matchesByReport.clear();
+    itemCache.clear();
+    revealedPhotos.clear();
+    loaded = false;
+  }
+
+  /// Checks a remembered session with the server (name/role may have changed). Offline keeps it.
+  Future<void> verifySession() async {
+    if (Api.instance.token == null) return;
+    try {
+      final fresh = await Api.instance.me();
+      await (await SharedPreferences.getInstance()).setString('user', jsonEncode(fresh.toJson()));
+      session.value = fresh;
+    } on ApiException {
+      await signOut(server: false); // expired, revoked or disabled
+    } catch (_) {
+      // Server unreachable: keep the cached account; requests will retry.
+    }
+  }
+
+  Future<void> loadPrefs(SharedPreferences prefs) async {
+    final token = prefs.getString('token');
+    final user = prefs.getString('user');
+    if (token != null && user != null) {
+      Api.instance.token = token;
+      session.value = AppUser.fromJson(jsonDecode(user));
+      userId = session.value!.id;
+    }
+    Api.instance.onUnauthorized = () {
+      if (session.value != null) signOut(server: false);
+    };
     devKey = prefs.getString('devKey');
     themeMode.value = ThemeMode.values.byName(prefs.getString('themeMode') ?? 'system');
     final code = prefs.getString('airport');
@@ -84,6 +150,13 @@ class AppData extends ChangeNotifier {
         airport = m.airport;
         zones = m.zones;
         airports = m.airports;
+      }
+      if (user == null || user!.isStaff) {
+        // Staff screens only need the airport info; reports and claims are passenger data.
+        error = null;
+        loaded = true;
+        notifyListeners();
+        return;
       }
       final r = await Future.wait([api.lostReports(userId), api.claims(userId)]);
       reports = r[0] as List<LostReport>;
