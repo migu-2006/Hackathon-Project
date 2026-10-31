@@ -257,10 +257,18 @@ class EmptyState extends StatelessWidget {
 DropdownButtonFormField<String> categoryDropdown(String? value, ValueChanged<String?> onChanged, {String label = 'Category'}) =>
     DropdownButtonFormField<String>(
       initialValue: value,
+      isExpanded: true, // narrow on phones (inventory filter): long names get an ellipsis instead of overflowing
       decoration: InputDecoration(labelText: label, prefixIcon: const Icon(Icons.category)),
       items: [
         for (final c in categories)
-          DropdownMenuItem(value: c, child: Row(children: [Icon(categoryIcon(c), size: 18), const SizedBox(width: 8), Text(capitalize(c))])),
+          DropdownMenuItem(
+            value: c,
+            child: Row(children: [
+              Icon(categoryIcon(c), size: 18),
+              const SizedBox(width: 8),
+              Flexible(child: Text(capitalize(c), overflow: TextOverflow.ellipsis)),
+            ]),
+          ),
       ],
       onChanged: onChanged,
     );
@@ -268,10 +276,18 @@ DropdownButtonFormField<String> categoryDropdown(String? value, ValueChanged<Str
 DropdownButtonFormField<String> colorDropdown(String? value, ValueChanged<String?> onChanged) =>
     DropdownButtonFormField<String>(
       initialValue: value,
+      isExpanded: true,
       decoration: const InputDecoration(labelText: 'Color', prefixIcon: Icon(Icons.palette)),
       items: [
         for (final c in colors)
-          DropdownMenuItem(value: c, child: Row(children: [ColorDot(namedColor(c)), const SizedBox(width: 8), Text(capitalize(c))])),
+          DropdownMenuItem(
+            value: c,
+            child: Row(children: [
+              ColorDot(namedColor(c)),
+              const SizedBox(width: 8),
+              Flexible(child: Text(capitalize(c), overflow: TextOverflow.ellipsis)),
+            ]),
+          ),
       ],
       onChanged: onChanged,
     );
@@ -280,7 +296,8 @@ DropdownButtonFormField<String> zoneDropdown(List<Zone> zones, String? value, Va
         {String label = 'Zone / Gate'}) =>
     DropdownButtonFormField<String>(
       initialValue: value,
+      isExpanded: true,
       decoration: InputDecoration(labelText: label, prefixIcon: const Icon(Icons.place)),
-      items: [for (final z in zones) DropdownMenuItem(value: z.id, child: Text(z.label))],
+      items: [for (final z in zones) DropdownMenuItem(value: z.id, child: Text(z.label, overflow: TextOverflow.ellipsis))],
       onChanged: onChanged,
     );
