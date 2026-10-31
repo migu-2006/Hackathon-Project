@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
+import '../../glass.dart';
 import '../../models.dart';
 import '../../theme.dart';
 import '../../ui.dart';
@@ -22,7 +23,9 @@ class HomeScreen extends StatelessWidget {
         titleSpacing: 20,
         title: const _Logo(),
         actions: [
+          RefreshButton(onRefresh: data.refresh),
           IconButton(
+            style: glassIconStyle(context),
             icon: Icon(Icons.account_circle_outlined, color: p.primary),
             tooltip: 'Account & settings',
             onPressed: () => showAccountSheet(context),

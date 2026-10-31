@@ -5,11 +5,11 @@ import '../app_state.dart';
 import '../theme.dart';
 import '../ui.dart';
 import 'passenger/help_screen.dart';
+import 'verify_email_screen.dart';
 
-enum Portal { passenger, staff, admin }
-
-/// First screen without a session: one sign-in for the three kinds of account.
-/// Passengers can create an account here; staff and administrators get theirs from an administrator.
+/// First screen without a session: one sign-in for every account. The account's role decides
+/// where it lands (passenger app, staff desk or administrator). Passengers can create an account
+/// here; staff and administrators get theirs from an administrator.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -22,7 +22,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
-  Portal _portal = Portal.passenger;
   bool _register = false;
   bool _hidden = true;
   bool _busy = false;
@@ -45,8 +44,16 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final s = _register
           ? await Api.instance.register(_name.text.trim(), _email.text.trim(), _password.text)
-          : await Api.instance.login(_email.text.trim(), _password.text, role: _portal.name);
-      await AppData.instance.signIn(s.token, s.user); // the app switches to the right home screen
+          : await Api.instance.login(_email.text.trim(), _password.text);
+      if (s.needsCode) {
+        // New (or never verified) passenger: enter the 6-digit code from the email first.
+        if (mounted) {
+          await Navigator.push(context, MaterialPageRoute(
+              builder: (_) => VerifyEmailScreen(email: s.pendingEmail!, resendSeconds: s.resendSeconds)));
+        }
+        return;
+      }
+      await AppData.instance.signIn(s.token!, s.user!); // the app switches to the right home screen
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
@@ -56,21 +63,12 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _setPortal(Portal p) => setState(() {
-        _portal = p;
-        _register = false;
-        _error = null;
-      });
-
   @override
   Widget build(BuildContext context) {
     final p = Palette.of(context);
-    final (title, subtitle) = switch (_portal) {
-      Portal.passenger when _register => ('Create your account', 'Report lost items and follow your claims.'),
-      Portal.passenger => ('Welcome back', 'Sign in to report and track lost items.'),
-      Portal.staff => ('Staff sign-in', 'Register found items, review claims and hand items over.'),
-      Portal.admin => ('Administrator', 'Manage staff and passenger accounts.'),
-    };
+    final (title, subtitle) = _register
+        ? ('Create your account', 'Report lost items and follow your claims.')
+        : ('Welcome back', 'Sign in with your email and password.');
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -93,18 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ]),
                     const SizedBox(height: 4),
                     Text('Airport Lost & Found', textAlign: TextAlign.center, style: TextStyle(color: p.muted)),
-                    const SizedBox(height: 28),
-                    SegmentedButton<Portal>(
-                      showSelectedIcon: false,
-                      segments: const [
-                        ButtonSegment(value: Portal.passenger, label: Text('Passenger')),
-                        ButtonSegment(value: Portal.staff, label: Text('Staff')),
-                        ButtonSegment(value: Portal.admin, label: Text('Admin')),
-                      ],
-                      selected: {_portal},
-                      onSelectionChanged: (s) => _setPortal(s.first),
-                    ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 36),
                     Text(title, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: p.text)),
                     const SizedBox(height: 4),
                     Text(subtitle, style: TextStyle(color: p.muted)),
@@ -171,22 +158,16 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed: _submit,
                     ),
                     const SizedBox(height: 12),
-                    if (_portal == Portal.passenger)
-                      TextButton(
-                        onPressed: () => setState(() {
-                          _register = !_register;
-                          _error = null;
-                        }),
-                        child: Text(_register ? 'Already have an account? Sign in' : 'New here? Create an account'),
-                      )
-                    else
-                      NoteCard(
-                        icon: Icons.info_outline,
-                        title: _portal == Portal.staff ? 'No account yet?' : 'Administrators only',
-                        body: _portal == Portal.staff
-                            ? 'Staff accounts are created by the administrator. Ask them for your email and password.'
-                            : 'Staff and passenger accounts can\'t sign in here.',
-                      ),
+                    TextButton(
+                      onPressed: () => setState(() {
+                        _register = !_register;
+                        _error = null;
+                      }),
+                      child: Text(_register ? 'Already have an account? Sign in' : 'New here? Create an account'),
+                    ),
+                    if (!_register)
+                      Text('Airport staff: use the account your administrator gave you.',
+                          textAlign: TextAlign.center, style: TextStyle(color: p.muted, fontSize: 12)),
                     const SizedBox(height: 24),
                     TextButton.icon(
                       onPressed: () async {

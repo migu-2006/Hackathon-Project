@@ -15,13 +15,16 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
-from . import config, storage
+from . import config, mailer, storage
 
 log = logging.getLogger("lostfound")
 router = APIRouter(tags=["Accounts"])
 
 ROLES = ("passenger", "staff", "admin")
 SESSION_DAYS = 30
+CODE_MINUTES = 10        # a verification code expires after this
+CODE_ATTEMPTS = 5        # wrong guesses before the code is burned (new one needed)
+RESEND_SECONDS = 60      # minimum gap between two emails to the same account
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -56,7 +59,9 @@ def _new_session(user: dict) -> str:
 
 
 def public_user(user: dict) -> dict:
-    return {k: user.get(k) for k in ("id", "email", "name", "role", "airport", "disabled", "timestamp")}
+    out = {k: user.get(k) for k in ("id", "email", "name", "role", "airport", "disabled", "timestamp")}
+    out["verified"] = is_verified(user)
+    return out
 
 
 def _check_password_rules(password: str):
@@ -83,7 +88,7 @@ def user_for_token(token: str | None) -> dict | None:
     if not session or session["expiresAt"] < storage.now():
         return None
     user = storage.get("users", session["userId"])
-    return user if user and not user.get("disabled") else None
+    return user if user and not user.get("disabled") and is_verified(user) else None
 
 
 # ---------------------------------------------------------------- dependencies
@@ -136,20 +141,108 @@ class Login(BaseModel):
     role: str | None = None  # portal the user signed in from: passenger / staff / admin
 
 
+# ---------------------------------------------------------------- email verification (sign-up)
+
+def is_verified(user: dict) -> bool:
+    # SQLite may hand the flag back as text; NULL means an account from before verification existed.
+    return str(user.get("verified")) not in ("0", "False")
+
+
+def _code_hash(user_id: str, code: str) -> str:
+    return hashlib.sha256(f"{user_id}:{code}".encode()).hexdigest()
+
+
+def _send_code(user: dict, force: bool = False) -> None:
+    """Emails a fresh 6-digit code (replacing the old one), at most once per RESEND_SECONDS."""
+    existing = storage.get("verification_codes", user["id"])
+    if existing and not force:
+        wait = RESEND_SECONDS - (datetime.now(timezone.utc) - datetime.fromisoformat(existing["sentAt"])).total_seconds()
+        if wait > 0:
+            raise HTTPException(429, f"Please wait {int(wait) + 1} seconds before asking for another code")
+    code = f"{secrets.randbelow(10**6):06d}"
+    try:
+        mailer.send_verification_code(user["email"], user["name"], code, CODE_MINUTES)
+    except Exception:
+        log.exception("Verification email to %s failed", user["email"])
+        raise HTTPException(502, "We couldn't send the verification email. Try again in a moment.")
+    storage.execute('DELETE FROM verification_codes WHERE "id" = ?', (user["id"],))
+    storage.insert("verification_codes", {
+        "id": user["id"], "codeHash": _code_hash(user["id"], code), "attempts": 0, "sentAt": storage.now(),
+        "expiresAt": (datetime.now(timezone.utc) + timedelta(minutes=CODE_MINUTES)).isoformat(),
+    })
+
+
+def _pending(user: dict) -> dict:
+    """Sign-up / sign-in answer for an account that still needs its email code: no session yet."""
+    return {"verificationRequired": True, "email": user["email"], "codeMinutes": CODE_MINUTES,
+            "resendSeconds": RESEND_SECONDS}
+
+
 @router.post("/auth/register")
 def register(body: Register):
-    """Passenger self sign-up. Staff and administrator accounts are created by an administrator."""
+    """Passenger self sign-up. Emails a 6-digit code; the account works once /auth/verify accepts it.
+    Staff and administrator accounts are created by an administrator (already verified)."""
     email = _normalize_email(body.email)
     _check_password_rules(body.password)
     if not body.name.strip():
         raise HTTPException(400, "Enter your name")
-    if _user_by_email(email):
+    existing = _user_by_email(email)
+    if existing and is_verified(existing):
         raise HTTPException(409, "An account with this email already exists. Sign in instead.")
-    user = storage.insert("users", {
-        "id": storage.new_id(), "email": email, "name": body.name.strip(), "role": "passenger",
-        "airport": None, "passwordHash": hash_password(body.password), "disabled": 0, "timestamp": storage.now(),
-    })
+    if existing:
+        # Never verified (code lost, typo in the name...): start the sign-up over.
+        storage.update("users", existing["id"], name=body.name.strip(), passwordHash=hash_password(body.password))
+        user = storage.get("users", existing["id"])
+    else:
+        user = storage.insert("users", {
+            "id": storage.new_id(), "email": email, "name": body.name.strip(), "role": "passenger",
+            "airport": None, "passwordHash": hash_password(body.password), "disabled": 0, "verified": 0,
+            "timestamp": storage.now(),
+        })
+    _send_code(user, force=True)
+    return _pending(user)
+
+
+class Verify(BaseModel):
+    email: str
+    code: str
+
+
+@router.post("/auth/verify")
+def verify_email(body: Verify):
+    """Checks the emailed code; on success the account is active and signed in."""
+    user = _user_by_email(body.email.strip().lower())
+    entry = storage.get("verification_codes", user["id"]) if user else None
+    if not user or is_verified(user) or not entry:
+        raise HTTPException(400, "No code is waiting for this email. Ask for a new one.")
+    if entry["expiresAt"] < storage.now():
+        raise HTTPException(400, "This code has expired. Ask for a new one.")
+    if int(entry["attempts"] or 0) >= CODE_ATTEMPTS:
+        raise HTTPException(429, "Too many wrong codes. Ask for a new one.")
+    code = re.sub(r"\D", "", body.code)
+    if not hmac.compare_digest(_code_hash(user["id"], code), entry["codeHash"]):
+        attempts = int(entry["attempts"] or 0) + 1
+        storage.update("verification_codes", user["id"], attempts=attempts)
+        left = CODE_ATTEMPTS - attempts
+        raise HTTPException(400, f"That code isn't right. {left} attempt(s) left." if left else
+                            "Too many wrong codes. Ask for a new one.")
+    storage.update("users", user["id"], verified=1)
+    storage.execute('DELETE FROM verification_codes WHERE "id" = ?', (user["id"],))
+    user = storage.get("users", user["id"])
     return {"token": _new_session(user), "user": public_user(user)}
+
+
+class Resend(BaseModel):
+    email: str
+
+
+@router.post("/auth/resend")
+def resend_code(body: Resend):
+    user = _user_by_email(body.email.strip().lower())
+    # Same answer for unknown / already verified emails: don't reveal which addresses have accounts.
+    if user and not is_verified(user) and not user.get("disabled"):
+        _send_code(user)
+    return {"ok": True, "resendSeconds": RESEND_SECONDS}
 
 
 @router.post("/auth/login")
@@ -159,6 +252,13 @@ def login(body: Login):
         raise HTTPException(401, "Wrong email or password")
     if user.get("disabled"):
         raise HTTPException(403, "This account is disabled. Contact the administrator.")
+    if not is_verified(user):
+        try:
+            _send_code(user)  # a fresh code, unless one was sent less than a minute ago
+        except HTTPException as e:
+            if e.status_code != 429:
+                raise
+        return _pending(user)
     # Staff portals need a staff account; an administrator may use any portal.
     if body.role == "staff" and not is_staff(user):
         raise HTTPException(403, "This is a passenger account. Use the Passenger sign-in.")
@@ -226,7 +326,7 @@ def create_user(body: NewUser, _: dict = Depends(require_admin)):
         raise HTTPException(409, "An account with this email already exists")
     user = storage.insert("users", {
         "id": storage.new_id(), "email": email, "name": body.name.strip() or email, "role": body.role,
-        "airport": body.airport, "passwordHash": hash_password(body.password), "disabled": 0,
+        "airport": body.airport, "passwordHash": hash_password(body.password), "disabled": 0, "verified": 1,
         "timestamp": storage.now(),
     })
     return public_user(user)
@@ -294,6 +394,6 @@ def ensure_admin() -> None:
     else:
         storage.insert("users", {
             "id": storage.new_id(), "email": email, "name": "Administrator", "role": "admin", "airport": None,
-            "passwordHash": hash_password(password), "disabled": 0, "timestamp": storage.now(),
+            "passwordHash": hash_password(password), "disabled": 0, "verified": 1, "timestamp": storage.now(),
         })
     log.warning("Administrator account: %s / %s (change it after signing in)", email, password)

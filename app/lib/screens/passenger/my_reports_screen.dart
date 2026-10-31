@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../api.dart';
 import '../../app_state.dart';
+import '../../glass.dart';
 import '../../models.dart';
 import '../../theme.dart';
 import '../../ui.dart';
@@ -38,7 +39,9 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
     final data = AppData.instance;
     return Scaffold(
       appBar: rAppBar(context, 'My reports', actions: [
+        RefreshButton(onRefresh: data.refresh),
         IconButton(
+          style: glassIconStyle(context),
           icon: const Icon(Icons.add),
           tooltip: 'New report',
           onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReportScreen())),

@@ -81,7 +81,16 @@ CREATE TABLE IF NOT EXISTS users (
     "airport" TEXT,         -- staff: home airport (optional)
     "passwordHash" TEXT,    -- scrypt$salt$hash
     "disabled" INTEGER DEFAULT 0,
+    "verified" INTEGER,     -- 0 until the emailed code is entered (NULL: older accounts, verified)
     "timestamp" TEXT
+);
+
+CREATE TABLE IF NOT EXISTS verification_codes (
+    "id" TEXT PRIMARY KEY,  -- user id (one live code per account)
+    "codeHash" TEXT,
+    "expiresAt" TEXT,
+    "attempts" INTEGER DEFAULT 0,
+    "sentAt" TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -101,3 +110,4 @@ ALTER TABLE claim_attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE users          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessions       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE verification_codes ENABLE ROW LEVEL SECURITY;

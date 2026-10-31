@@ -25,9 +25,12 @@ class AttemptsScreenState extends State<AttemptsScreen> {
   Future<List<Map<String, dynamic>>> _fetch() =>
       Api.instance.claimAttempts(airport: AppData.instance.airport.code, lockedOnly: _lockedOnly);
 
-  void refresh() => setState(() {
-        _log = _fetch();
-      });
+  Future<void> refresh() {
+    setState(() {
+      _log = _fetch();
+    });
+    return _log;
+  }
 
   Future<void> _unlock(String userId, String itemId) async {
     final ok = await showDialog<bool>(

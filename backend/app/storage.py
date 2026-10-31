@@ -92,7 +92,15 @@ CREATE TABLE IF NOT EXISTS users (
     airport TEXT,         -- staff: home airport (optional)
     passwordHash TEXT,    -- scrypt$salt$hash
     disabled INTEGER DEFAULT 0,
+    verified INTEGER,     -- 0 until the emailed code is entered (NULL: older accounts, verified)
     timestamp TEXT
+);
+CREATE TABLE IF NOT EXISTS verification_codes (
+    id TEXT PRIMARY KEY,  -- user id (one live code per account)
+    codeHash TEXT,
+    expiresAt TEXT,
+    attempts INTEGER DEFAULT 0,
+    sentAt TEXT
 );
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,  -- SHA-256 of the bearer token (the token itself is never stored)
@@ -131,6 +139,7 @@ def _sql(sql: str) -> str:
 def _migrate_postgres(conn) -> None:
     conn.execute((Path(__file__).resolve().parents[1] / "supabase" / "schema.sql").read_text(encoding="utf-8"))
     conn.execute('ALTER TABLE claims ADD COLUMN IF NOT EXISTS "pickupCode" TEXT')
+    conn.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS "verified" INTEGER')
     for table in ("found_items", "lost_reports"):
         conn.execute(f'UPDATE {table} SET "airport" = %s WHERE "airport" IS NULL', (config.DEFAULT_AIRPORT,))
 
@@ -143,6 +152,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
+    if "verified" not in {r[1] for r in conn.execute("PRAGMA table_info(users)")}:
+        conn.execute("ALTER TABLE users ADD COLUMN verified INTEGER")
     # Rows from before multi-airport support belong to the default airport.
     for table in ("found_items", "lost_reports"):
         conn.execute(f"UPDATE {table} SET airport = ? WHERE airport IS NULL", (config.DEFAULT_AIRPORT,))

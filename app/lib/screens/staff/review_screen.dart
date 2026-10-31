@@ -19,9 +19,12 @@ class ReviewScreenState extends State<ReviewScreen> {
   late Future<List<Map<String, dynamic>>> _claims = Api.instance.staffClaims();
   final _busy = <String>{};
 
-  void refresh() => setState(() {
-        _claims = Api.instance.staffClaims();
-      });
+  Future<void> refresh() {
+    setState(() {
+      _claims = Api.instance.staffClaims();
+    });
+    return _claims;
+  }
 
   Future<void> _decide(String claimId, bool approved) async {
     setState(() => _busy.add(claimId));

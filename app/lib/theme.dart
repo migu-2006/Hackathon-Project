@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'glass.dart';
+
 /// SkyFindr design tokens: calm blue on light gray, deep navy in dark mode.
 class Palette {
   final Color background;
@@ -106,24 +108,29 @@ ThemeData buildTheme(Brightness brightness) {
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       hintStyle: TextStyle(color: p.muted),
     ),
+    // Liquid glass buttons (glass.dart): translucent tint + blur, sheen and rim light on top.
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        backgroundColor: p.primary,
+        backgroundColor: p.primary.withValues(alpha: 0.88),
         foregroundColor: p.onPrimary,
         minimumSize: const Size(64, 52),
         shape: RoundedRectangleBorder(borderRadius: radius),
         textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-      ),
+        elevation: 3,
+        shadowColor: p.primary.withValues(alpha: 0.5),
+      ).copyWith(backgroundBuilder: glassBuilder(RoundedRectangleBorder(borderRadius: radius))),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         foregroundColor: p.primary,
         minimumSize: const Size(64, 50),
-        side: BorderSide(color: p.border),
-        backgroundColor: p.surface,
+        side: BorderSide(color: p.border.withValues(alpha: 0.8)),
+        backgroundColor: p.surface.withValues(alpha: 0.6),
         shape: RoundedRectangleBorder(borderRadius: radius),
         textStyle: const TextStyle(fontWeight: FontWeight.w600),
-      ),
+        elevation: 1,
+        shadowColor: Colors.black.withValues(alpha: 0.2),
+      ).copyWith(backgroundBuilder: glassBuilder(RoundedRectangleBorder(borderRadius: radius))),
     ),
     textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: p.primary)),
     navigationBarTheme: NavigationBarThemeData(

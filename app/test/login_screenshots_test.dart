@@ -31,11 +31,12 @@ Future<void> _loadFonts() async {
   await (FontLoader('MaterialIcons')..addFont(bytes('materialicons-regular.otf'))).load();
 }
 
-Future<void> _show(WidgetTester tester, Widget page) async {
+Future<void> _show(WidgetTester tester, Widget page, {Brightness brightness = Brightness.light}) async {
   tester.view.physicalSize = const Size(1170, 2532);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(MaterialApp(debugShowCheckedModeBanner: false, theme: buildTheme(Brightness.light), home: page));
+  debugDisableShadows = false; // real shadows (tests draw them as black outlines by default)
+  await tester.pumpWidget(MaterialApp(debugShowCheckedModeBanner: false, theme: buildTheme(brightness), home: page));
   await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
   await tester.pumpAndSettle();
 }
@@ -65,10 +66,14 @@ void main() {
 
   testWidgets('sign-in page', skip: !_enabled, (tester) async {
     await _show(tester, const LoginScreen());
-    await expectLater(find.byType(MaterialApp), matchesGoldenFile('../build/screenshots/login_passenger.png'));
-    await tester.tap(find.text('Staff'));
-    await tester.pumpAndSettle();
-    await expectLater(find.byType(MaterialApp), matchesGoldenFile('../build/screenshots/login_staff.png'));
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('../build/screenshots/login.png'));
+    debugDisableShadows = true;
+  });
+
+  testWidgets('sign-in page, dark', skip: !_enabled, (tester) async {
+    await _show(tester, const LoginScreen(), brightness: Brightness.dark);
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('../build/screenshots/login_dark.png'));
+    debugDisableShadows = true;
   });
 
   testWidgets('administrator accounts', skip: !_enabled, (tester) async {
@@ -78,5 +83,6 @@ void main() {
     await tester.tap(find.text('Add staff account'));
     await tester.pumpAndSettle();
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('../build/screenshots/admin_new_account.png'));
+    debugDisableShadows = true;
   });
 }

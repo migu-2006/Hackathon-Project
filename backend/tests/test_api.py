@@ -16,7 +16,10 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from app import main, matching, vision
+from app import mailer, main, matching, storage, vision
+
+# Verification emails are captured here instead of sent: {email: [codes, newest last]}.
+SENT: dict[str, list[str]] = {}
 
 
 def fake_analysis(category="backpack", color="black", emb=(1.0, 0.0, 0.0)):
@@ -30,6 +33,8 @@ def client(monkeypatch):
     monkeypatch.setattr(vision, "warmup", lambda: None)
     state = {"next": fake_analysis()}
     monkeypatch.setattr(vision, "analyze", lambda img: state["next"])
+    monkeypatch.setattr(mailer, "send_verification_code",
+                        lambda to, name, code, minutes: SENT.setdefault(to, []).append(code))
     with TestClient(main.app) as c:
         c.state = state
         yield c
@@ -51,11 +56,17 @@ def admin(client) -> TestClient:
     return login(client, "admin@test.app", "admin-pass", role="admin")
 
 
-def passenger(client, name="Pax") -> TestClient:
-    r = client.post("/auth/register", json={"email": f"{uuid.uuid4().hex[:8]}@mail.com", "password": "secret1",
-                                            "name": name})
+def register(client, email, password="secret1", name="Pax") -> TestClient:
+    """Sign-up + the emailed code, like a passenger in the app."""
+    r = client.post("/auth/register", json={"email": email, "password": password, "name": name})
+    assert r.status_code == 200 and r.json()["verificationRequired"], r.text
+    r = client.post("/auth/verify", json={"email": email, "code": SENT[email.lower()][-1]})
     assert r.status_code == 200, r.text
     return signed_in(r.json()["token"])
+
+
+def passenger(client, name="Pax") -> TestClient:
+    return register(client, f"{uuid.uuid4().hex[:8]}@mail.com", name=name)
 
 
 def staff(client) -> TestClient:
@@ -95,10 +106,10 @@ def test_airports_and_maps(client):
 
 
 def test_accounts_and_roles(client):
-    # Passengers sign themselves up; emails are unique and case-insensitive.
-    r = client.post("/auth/register", json={"email": "Ana@Mail.com", "password": "secret1", "name": "Ana"})
-    assert r.status_code == 200 and r.json()["user"] == r.json()["user"] | {"email": "ana@mail.com", "role": "passenger"}
-    assert "passwordHash" not in r.json()["user"]
+    # Passengers sign themselves up (with the emailed code); emails are unique and case-insensitive.
+    ana = register(client, "Ana@Mail.com", name="Ana")
+    assert ana.user == ana.user | {"email": "ana@mail.com", "role": "passenger", "verified": True}
+    assert "passwordHash" not in ana.user
     assert client.post("/auth/register", json={"email": "ana@mail.com", "password": "secret1", "name": "A"}).status_code == 409
     assert client.post("/auth/register", json={"email": "x@mail.com", "password": "123", "name": "X"}).status_code == 400
     assert client.post("/auth/login", json={"email": "ana@mail.com", "password": "wrong"}).status_code == 401
@@ -136,6 +147,67 @@ def test_accounts_and_roles(client):
     assert ana.post("/auth/password", json={"currentPassword": "newpass", "newPassword": "x123456"}).status_code == 200
     ana.post("/auth/logout")
     assert ana.get("/auth/me").status_code == 401
+
+
+def test_sign_up_needs_the_emailed_code(client):
+    email = "new.pax@mail.com"
+    r = client.post("/auth/register", json={"email": email, "password": "secret1", "name": "New Pax"}).json()
+    assert r == r | {"verificationRequired": True, "email": email} and "token" not in r
+    code = SENT[email][-1]
+    assert len(code) == 6 and code.isdigit()
+
+    # No session before the code: signing in just asks for the code again (resend throttled).
+    r = client.post("/auth/login", json={"email": email, "password": "secret1"}).json()
+    assert r["verificationRequired"] and "token" not in r and len(SENT[email]) == 1
+    assert client.post("/auth/resend", json={"email": email}).status_code == 429
+
+    # Wrong codes count down, then the code is burned.
+    wrong = "000000" if code != "000000" else "111111"
+    r = client.post("/auth/verify", json={"email": email, "code": wrong})
+    assert r.status_code == 400 and "4 attempt(s) left" in r.json()["detail"]
+    for _ in range(4):
+        client.post("/auth/verify", json={"email": email, "code": wrong})
+    assert client.post("/auth/verify", json={"email": email, "code": code}).status_code == 429
+
+    # A new code (after the cooldown) works, with spaces as typed from the email.
+    uid = storage.find("users", email=email)[0]["id"]
+    storage.update("verification_codes", uid, sentAt="2000-01-01T00:00:00+00:00")  # cooldown over
+    assert client.post("/auth/resend", json={"email": email}).json()["ok"]
+    code = SENT[email][-1]
+    r = client.post("/auth/verify", json={"email": email, "code": f"{code[:3]} {code[3:]}"})
+    assert r.status_code == 200 and r.json()["user"]["verified"] is True
+    assert signed_in(r.json()["token"]).get("/auth/me").status_code == 200
+    assert client.post("/auth/verify", json={"email": email, "code": code}).status_code == 400  # used up
+
+    # Verified: normal sign-in, and the email can't be registered again.
+    assert "token" in client.post("/auth/login", json={"email": email, "password": "secret1"}).json()
+    assert client.post("/auth/register", json={"email": email, "password": "x123456", "name": "X"}).status_code == 409
+    # Resend never reveals whether an address has an account.
+    assert client.post("/auth/resend", json={"email": "nobody@mail.com"}).json()["ok"]
+
+    # An expired code is refused.
+    other = "late@mail.com"
+    client.post("/auth/register", json={"email": other, "password": "secret1", "name": "Late"})
+    uid = storage.find("users", email=other)[0]["id"]
+    storage.update("verification_codes", uid, expiresAt="2000-01-01T00:00:00+00:00")
+    r = client.post("/auth/verify", json={"email": other, "code": SENT[other][-1]})
+    assert r.status_code == 400 and "expired" in r.json()["detail"]
+    # Signing up again with the same (unverified) email starts over with a new code.
+    client.post("/auth/register", json={"email": other, "password": "newpass", "name": "Late Again"})
+    r = client.post("/auth/verify", json={"email": other, "code": SENT[other][-1]}).json()
+    assert r["user"]["name"] == "Late Again"
+    assert "token" in client.post("/auth/login", json={"email": other, "password": "newpass"}).json()
+
+    # Staff created by an administrator need no code.
+    assert staff(client).user["verified"] is True
+
+
+def test_email_failure_is_reported(client, monkeypatch):
+    def broken(*_):
+        raise OSError("smtp down")
+    monkeypatch.setattr(mailer, "send_verification_code", broken)
+    r = client.post("/auth/register", json={"email": "fail@mail.com", "password": "secret1", "name": "F"})
+    assert r.status_code == 502 and "email" in r.json()["detail"]
 
 
 def test_passengers_only_see_their_own_data(client):

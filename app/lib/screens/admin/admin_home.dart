@@ -33,9 +33,12 @@ class _AdminHomeState extends State<AdminHome> {
     AppData.instance.refresh(); // airports for the staff "home airport" picker
   }
 
-  void _reload() => setState(() {
-        _users = Api.instance.users();
-      });
+  Future<void> _reload() {
+    setState(() {
+      _users = Api.instance.users();
+    });
+    return _users;
+  }
 
   Future<void> _create() async {
     final created = await showDialog<(AppUser, String)>(context: context, builder: (_) => const _NewAccountDialog());
@@ -48,7 +51,10 @@ class _AdminHomeState extends State<AdminHome> {
   Widget build(BuildContext context) {
     final p = Palette.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Administrator'), actions: const [AccountButton(), SizedBox(width: 8)]),
+      appBar: AppBar(
+        title: const Text('Administrator'),
+        actions: [RefreshButton(onRefresh: _reload), const AccountButton(), const SizedBox(width: 8)],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _create,
         icon: const Icon(Icons.person_add_alt_1),
@@ -66,7 +72,7 @@ class _AdminHomeState extends State<AdminHome> {
               .where((u) => _role == null || u.role == _role)
               .where((u) => q.isEmpty || u.name.toLowerCase().contains(q) || u.email.contains(q))
               .toList();
-          return PageBody(onRefresh: () async => _reload(), children: [
+          return PageBody(onRefresh: _reload, children: [
             const PageHeader(title: 'Accounts', subtitle: 'Passengers sign up in the app. Staff accounts are created here.'),
             Row(children: [
               Expanded(

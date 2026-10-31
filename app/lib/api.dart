@@ -14,6 +14,21 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+/// Answer to sign-in / sign-up: a session, or "enter the code we emailed" ([pendingEmail]).
+class AuthResult {
+  final String? token;
+  final AppUser? user;
+  final String? pendingEmail;
+  final int resendSeconds;
+  const AuthResult({this.token, this.user, this.pendingEmail, this.resendSeconds = 60});
+
+  bool get needsCode => token == null;
+
+  factory AuthResult.fromJson(Map<String, dynamic> j) => j['verificationRequired'] == true
+      ? AuthResult(pendingEmail: j['email'], resendSeconds: (j['resendSeconds'] as num?)?.toInt() ?? 60)
+      : AuthResult(token: j['token'], user: AppUser.fromJson(j['user']));
+}
+
 /// Thin client over the FastAPI backend (see backend/README.md for the endpoints).
 class Api {
   Api._();
@@ -89,17 +104,19 @@ class Api {
 
   // ---------------------------------------------------------------- Accounts
 
-  Future<({String token, AppUser user})> _session(dynamic r) async =>
-      (token: r['token'] as String, user: AppUser.fromJson(r['user']));
+  /// A passenger who never entered their emailed code gets [AuthResult.needsCode] (a fresh code is sent).
+  Future<AuthResult> login(String email, String password) async =>
+      AuthResult.fromJson(await _postJson('/auth/login', {'email': email, 'password': password}));
 
-  /// [role] is the portal signed in from (passenger / staff / admin); the server refuses
-  /// e.g. a passenger account on the staff sign-in.
-  Future<({String token, AppUser user})> login(String email, String password, {String? role}) async =>
-      _session(await _postJson('/auth/login', {'email': email, 'password': password, 'role': role}));
+  /// Passenger self sign-up: always answers "check your email" (6-digit code).
+  Future<AuthResult> register(String name, String email, String password) async =>
+      AuthResult.fromJson(await _postJson('/auth/register', {'name': name, 'email': email, 'password': password}));
 
-  /// Passenger self sign-up.
-  Future<({String token, AppUser user})> register(String name, String email, String password) async =>
-      _session(await _postJson('/auth/register', {'name': name, 'email': email, 'password': password}));
+  /// The code from the sign-up email; returns the session once it matches.
+  Future<AuthResult> verifyEmail(String email, String code) async =>
+      AuthResult.fromJson(await _postJson('/auth/verify', {'email': email, 'code': code}));
+
+  Future<void> resendCode(String email) async => _postJson('/auth/resend', {'email': email});
 
   Future<AppUser> me() async => AppUser.fromJson(await _get('/auth/me'));
 

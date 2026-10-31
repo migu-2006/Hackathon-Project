@@ -20,6 +20,14 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "images")
 
+# Outgoing email for sign-up verification codes (Gmail: smtp.gmail.com, 587, an app password).
+# Not set: codes are printed in the server log instead of emailed.
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM = os.getenv("SMTP_FROM", "")  # e.g. "SkyFindr <you@gmail.com>"; defaults to SMTP_USER
+
 # First administrator, created on start when there is none (see auth.ensure_admin).
 # Without LF_ADMIN_PASSWORD a random one is saved to data/admin_password.txt and printed.
 ADMIN_EMAIL = os.getenv("LF_ADMIN_EMAIL", "admin@skyfindr.app")

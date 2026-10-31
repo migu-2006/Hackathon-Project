@@ -22,7 +22,9 @@ void main() {
       'location': 'Gate 3',
       'timestamp': DateTime.now().toUtc().toIso8601String(),
     };
+    var listCalls = 0;
     Api.instance.client = MockClient((req) async {
+      if (req.url.path == '/found-items') listCalls++;
       final body = req.url.path == '/found-items' ? [itemJson] : [];
       return http.Response(jsonEncode(body), 200, headers: {'content-type': 'application/json'});
     });
@@ -43,5 +45,14 @@ void main() {
     expect(find.textContaining('registered at Gate 3'), findsOneWidget);
     expect(find.textContaining('2 passenger(s)'), findsOneWidget);
     expect(find.text('New'), findsOneWidget);
+
+    // The app bar's refresh reloads the open tab (here: the inventory).
+    final before = listCalls;
+    await tester.tap(find.byTooltip('Refresh'));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(listCalls, before + 1);
+    expect(find.byTooltip('Refresh'), findsOneWidget); // spinner done, button back
   });
 }

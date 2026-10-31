@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../app_state.dart';
+import '../glass.dart';
 import '../models.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -35,6 +36,7 @@ class AccountButton extends StatelessWidget {
     if (user == null) return const SizedBox.shrink();
     return PopupMenuButton<String>(
       tooltip: 'Account',
+      style: glassIconStyle(context),
       position: PopupMenuPosition.under,
       icon: UserAvatar(user, radius: 15),
       onSelected: (v) => v == 'password' ? changePasswordDialog(context) : confirmSignOut(context),

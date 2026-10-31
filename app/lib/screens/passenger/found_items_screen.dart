@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../api.dart';
 import '../../app_state.dart';
+import '../../glass.dart';
 import '../../models.dart';
 import '../../theme.dart';
 import '../../ui.dart';
@@ -129,7 +130,9 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
     final data = AppData.instance;
     return Scaffold(
       appBar: rAppBar(context, 'Found items', actions: [
+        RefreshButton(onRefresh: _reload),
         IconButton(
+          style: glassIconStyle(context),
           icon: const Icon(Icons.map_outlined),
           tooltip: 'Terminal map',
           onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AirportMapScreen())),

@@ -21,11 +21,14 @@ class InventoryScreenState extends State<InventoryScreen> {
 
   Future<List<FoundItem>> _load() => Api.instance.foundItems(airport: AppData.instance.airport.code, status: _status, category: _category, staff: true);
 
-  void refresh({String? highlight}) => setState(() {
-        _highlight = highlight;
-        if (highlight != null) _status = 'available';
-        _items = _load();
-      });
+  Future<void> refresh({String? highlight}) {
+    setState(() {
+      _highlight = highlight;
+      if (highlight != null) _status = 'available';
+      _items = _load();
+    });
+    return _items;
+  }
 
   @override
   Widget build(BuildContext context) {

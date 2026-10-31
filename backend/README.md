@@ -26,6 +26,26 @@ disable, delete) needs an administrator. The first administrator is created on s
 `LF_ADMIN_EMAIL` / `LF_ADMIN_PASSWORD`, else `admin@skyfindr.app` with a random password in
 `data/admin_password.txt` (also printed in the log).
 
+### Email verification (sign-up)
+
+`POST /auth/register` creates the passenger unverified and emails a 6-digit code (expires in 10 min,
+5 wrong tries burn it). `POST /auth/verify {email, code}` activates the account and returns the session;
+`POST /auth/resend {email}` sends a new one (once a minute). Signing in to an unverified account sends a
+fresh code instead of a session. Staff/admin accounts created by an administrator need no code.
+
+Mail goes out over SMTP, configured in `backend/.env`. Gmail: turn on 2-Step Verification, create an
+app password (Google Account > Security > App passwords), then:
+
+```
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@gmail.com
+SMTP_PASSWORD=abcdefghijklmnop   # the 16-character app password, no spaces
+SMTP_FROM=SkyFindr <you@gmail.com>
+```
+
+Without SMTP settings the code is printed in the server log instead (handy on a dev laptop).
+
 ## Tests
 
 ```powershell

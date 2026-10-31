@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'app_state.dart';
+import 'glass.dart';
 import 'models.dart';
 import 'screens/passenger/shell.dart';
 import 'theme.dart';
@@ -51,10 +54,47 @@ String categoryLabel(String c) {
 
 // ---------------------------------------------------------------- app bar
 
+/// App bar refresh: reloads the page's data and spins meanwhile (pull-to-refresh does the
+/// same, but isn't discoverable with a mouse on the desk PC).
+class RefreshButton extends StatefulWidget {
+  final FutureOr<void> Function() onRefresh;
+  const RefreshButton({super.key, required this.onRefresh});
+
+  @override
+  State<RefreshButton> createState() => _RefreshButtonState();
+}
+
+class _RefreshButtonState extends State<RefreshButton> {
+  bool _busy = false;
+
+  Future<void> _run() async {
+    setState(() => _busy = true);
+    try {
+      // Minimum spin so a fast reload still visibly happened.
+      await Future.wait([Future.sync(widget.onRefresh), Future<void>.delayed(const Duration(milliseconds: 500))]);
+    } catch (_) {
+      // The page shows its own error state.
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+        style: glassIconStyle(context),
+        tooltip: 'Refresh',
+        onPressed: _busy ? null : _run,
+        icon: _busy
+            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.refresh),
+      );
+}
+
 /// Back arrow (pops, or returns to Home on a tab root) + title + help.
 PreferredSizeWidget rAppBar(BuildContext context, String title, {List<Widget> actions = const []}) {
   return AppBar(
     leading: IconButton(
+      style: glassIconStyle(context),
       icon: const Icon(Icons.arrow_back),
       onPressed: () => Navigator.of(context).canPop() ? Navigator.of(context).pop() : AppShell.goTo(ShellTab.home),
     ),
@@ -63,6 +103,7 @@ PreferredSizeWidget rAppBar(BuildContext context, String title, {List<Widget> ac
     actions: [
       ...actions,
       IconButton(
+        style: glassIconStyle(context),
         icon: const Icon(Icons.help_outline),
         tooltip: 'Help',
         onPressed: () => AppShell.goTo(ShellTab.help),

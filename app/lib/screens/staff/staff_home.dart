@@ -92,6 +92,10 @@ class _StaffHomeState extends State<StaffHome> {
               ),
             ),
           ),
+          // Intake and Pick-up have nothing to reload.
+          if (_tab == 1) RefreshButton(onRefresh: () => _inventoryKey.currentState?.refresh()),
+          if (_tab == 2) RefreshButton(onRefresh: () => _reviewKey.currentState?.refresh()),
+          if (_tab == 4) RefreshButton(onRefresh: () => _attemptsKey.currentState?.refresh()),
           const AccountButton(),
           const SizedBox(width: 8),
         ],
