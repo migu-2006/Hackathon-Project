@@ -1,0 +1,19 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Backend runtime data (SQLite DB + uploaded photos) and YOLO weights (auto-downloaded on first start)
+backend/data/
+*.pt
+
+# Release builds: attach these to a GitHub Release instead of committing them
+dist/
+
+# Editors / OS
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db

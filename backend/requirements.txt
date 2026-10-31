@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+python-multipart
+ultralytics
+qrcode[pil]
+numpy
+pillow
+# Optional: OCR for brand / visible text (large download, enables Modul A OCR)
+# easyocr
+# Dev
+httpx
+pytest
