@@ -40,8 +40,6 @@ ENABLE_OCR = os.getenv("LF_ENABLE_OCR", "0") == "1"
 
 # A lost report and a found item are considered a match above this score (0..1).
 MATCH_THRESHOLD = float(os.getenv("LF_MATCH_THRESHOLD", "0.55"))
-# Wrong answers to an item's verification question before the passenger is locked out of that item.
-MAX_CLAIM_ATTEMPTS = int(os.getenv("LF_MAX_CLAIM_ATTEMPTS", "3"))
 
 # Supported airports. Each has a map built from OpenStreetMap by tools/fetch_osm_map.py
 # (app/maps/<code>.json); its zones (gates, check-in, security, ...) are where items get pinned.

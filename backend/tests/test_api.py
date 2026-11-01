@@ -311,41 +311,34 @@ def test_full_flow(client):
     assert pax.get("/lost-reports").json()[0]["status"] == "recovered"
 
 
-def test_wrong_answers_lock_the_item(client):
+def test_one_claim_per_item_and_no_automatic_check(client):
     desk, thief = staff(client), passenger(client, "Thief")
     gate = next(z for z in client.get("/meta").json()["zones"] if z["name"].startswith("Gate "))
     item = desk.post("/found-items", files={"image": png()},
                      data={"location": gate["id"], "secretDetail": "Engraved initials M.A. and a cat sticker"}).json()["item"]
     report = thief.post("/lost-reports", data={"description": "black backpack", "category": "backpack"}).json()["report"]
 
+    # Opening the claim twice before sending reuses it.
     claim = thief.post("/claims", json={"reportId": report["id"], "itemId": item["id"]}).json()
-    assert claim["attemptsLeft"] == 3
+    assert thief.post("/claims", json={"reportId": report["id"], "itemId": item["id"]}).json()["id"] == claim["id"]
+
+    # Any description goes straight to staff review: no automatic comparison with the hidden detail.
     r = thief.post(f"/claims/{claim['id']}/answer", json={"answer": "a red keychain"}).json()
-    assert r == r | {"status": "awaiting_answer", "correct": False, "attemptsLeft": 2}
-    # A new claim for the same item does not reset the counter.
-    claim = thief.post("/claims", json={"reportId": report["id"], "itemId": item["id"]}).json()
-    assert claim["attemptsLeft"] == 2
-    thief.post(f"/claims/{claim['id']}/answer", json={"answer": "a dog sticker"})
-    r = thief.post(f"/claims/{claim['id']}/answer", json={"answer": "nothing special"}).json()
-    assert r["status"] == "locked" and r["attemptsLeft"] == 0 and "desk" in r["message"]
-    assert thief.post("/claims", json={"reportId": report["id"], "itemId": item["id"]}).status_code == 423
+    assert r == {"id": claim["id"], "status": "under_review"}
+    assert thief.post(f"/claims/{claim['id']}/answer", json={"answer": "a dog sticker"}).status_code == 409
+    view = next(c for c in desk.get("/staff/claims").json() if c["claim"]["id"] == claim["id"])
+    assert view["claim"]["answer"] == "a red keychain" and view["item"]["secretDetail"].startswith("Engraved")
 
+    # Staff reject it: the passenger can't claim this item again.
+    assert desk.post(f"/staff/claims/{claim['id']}/review", json={"approved": False}).status_code == 200
+    again = thief.post("/claims", json={"reportId": report["id"], "itemId": item["id"]})
+    assert again.status_code == 409 and "once" in again.json()["detail"]
+
+    # The staff log keeps what was sent.
     uid = thief.user["id"]
-    log = desk.get("/staff/claim-attempts", params={"airport": "LHR", "lockedOnly": True}).json()
-    entry = next(g for g in log if g["userId"] == uid)
-    assert entry["locked"] and entry["failed"] == 3 and len(entry["attempts"]) == 3
-    assert entry["attempts"][0]["answer"] == "nothing special"  # newest first
-    assert entry["item"]["secretDetail"].startswith("Engraved")
-
-    # Staff unlock after checking ID: the log is kept, the passenger can answer again (typos tolerated).
-    assert desk.post("/staff/claim-attempts/unlock", json={"userId": uid, "itemId": item["id"]}).json()["cleared"] == 3
-    claim = thief.post("/claims", json={"reportId": report["id"], "itemId": item["id"]}).json()
-    assert claim["attemptsLeft"] == 3
-    r = thief.post(f"/claims/{claim['id']}/answer", json={"answer": "it has a cat stiker and my initals engraved"}).json()
-    assert r["status"] == "under_review" and r["correct"] is True
-    entry = next(g for g in desk.get("/staff/claim-attempts").json() if g["userId"] == uid)
-    assert not entry["locked"] and len(entry["attempts"]) == 4
-    assert next(c for c in desk.get("/staff/claims").json() if c["claim"]["id"] == claim["id"])["failedAttempts"] == 0
+    entry = next(g for g in desk.get("/staff/claim-attempts", params={"airport": "LHR"}).json() if g["userId"] == uid)
+    assert [a["answer"] for a in entry["attempts"]] == ["a red keychain"]
+    assert entry["attempts"][0]["result"] == "submitted"
 
 
 def test_photos_are_blurred_until_reverse_image_search(client):

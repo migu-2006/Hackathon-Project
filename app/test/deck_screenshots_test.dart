@@ -103,12 +103,11 @@ MockClient _backend() => MockClient((req) async {
         body = [
           {
             'claim': {..._claim, 'status': 'under_review', 'token': null, 'pickupCode': null}, 'item': _items(staff: true)[0],
-            'report': _reports[0], 'failedAttempts': 0,
+            'report': _reports[0],
           },
           {
             'claim': {..._claim, 'id': 'c2', 'status': 'under_review', 'itemId': 'f00dcafe0001', 'answer': 'my student card is inside', 'userId': 'pax-02c4e8aa'},
             'item': _items(staff: true)[2], 'report': {..._reports[1], 'id': 'w1', 'category': 'wallet', 'color': 'brown', 'description': 'Brown leather wallet'},
-            'failedAttempts': 1,
           },
         ];
       } else if (path.startsWith('/claims/scan/')) {

@@ -256,17 +256,15 @@ class Api {
   // ---------------------------------------------------------------- Claim & Pick-up
 
   /// Returns (claimId, verification question, wrong answers still allowed).
-  /// Throws an [ApiException] when the passenger is locked out of this item.
-  Future<({String id, String question, int attemptsLeft})> createClaim(String reportId, String itemId) async {
+  Future<({String id, String question})> createClaim(String reportId, String itemId) async {
     final r = await _postJson('/claims', {'reportId': reportId, 'itemId': itemId});
-    return (id: r['id'] as String, question: r['question'] as String, attemptsLeft: (r['attemptsLeft'] as num?)?.toInt() ?? 3);
+    return (id: r['id'] as String, question: r['question'] as String);
   }
 
   /// Sends the answer. status: under_review (right, goes to the airport team), awaiting_answer
-  /// (wrong, try again) or locked (too many wrong answers).
-  Future<({String status, int? attemptsLeft, String? message})> answerClaim(String claimId, String answer) async {
+  Future<({String status, String? message})> answerClaim(String claimId, String answer) async {
     final r = await _postJson('/claims/$claimId/answer', {'answer': answer});
-    return (status: r['status'] as String, attemptsLeft: (r['attemptsLeft'] as num?)?.toInt(), message: r['message'] as String?);
+    return (status: r['status'] as String, message: r['message'] as String?);
   }
 
   /// The token in the URL lets Image.network load it (the pass belongs to the signed-in passenger).
@@ -279,15 +277,11 @@ class Api {
   Future<List<Map<String, dynamic>>> staffClaims({String status = 'under_review'}) async =>
       [for (final c in await _get('/staff/claims', {'status': status})) Map<String, dynamic>.from(c)];
 
-  /// Staff: verification attempts per passenger + item (answers, wrong count, lock state).
-  Future<List<Map<String, dynamic>>> claimAttempts({String? airport, bool lockedOnly = false}) async => [
-        for (final g in await _get('/staff/claim-attempts', {'airport': airport, 'lockedOnly': lockedOnly ? 'true' : null}))
+  /// Staff: verification attempts per passenger + item (answers and wrong count).
+  Future<List<Map<String, dynamic>>> claimAttempts({String? airport}) async => [
+        for (final g in await _get('/staff/claim-attempts', {'airport': airport}))
           Map<String, dynamic>.from(g)
       ];
-
-  /// Staff: lift a lockout after checking the passenger in person.
-  Future<void> unlockClaims(String userId, String itemId) async =>
-      _postJson('/staff/claim-attempts/unlock', {'userId': userId, 'itemId': itemId});
 
   Future<void> reviewClaim(String claimId, bool approved) async =>
       _postJson('/staff/claims/$claimId/review', {'approved': approved});

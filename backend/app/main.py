@@ -6,13 +6,10 @@ Docs: http://localhost:8000/docs
 from __future__ import annotations
 
 import asyncio
-import difflib
 import io
 import logging
-import math
 import re
 import secrets
-import unicodedata
 from contextlib import asynccontextmanager
 
 import qrcode
@@ -414,44 +411,6 @@ def _verification_question(item: dict) -> str:
     return f"Describe the {item['category']} in detail: brand, contents and any distinctive marks."
 
 
-_STOPWORDS = {
-    "the", "and", "with", "has", "have", "there", "this", "that", "its", "it's", "inside", "on", "of", "in",
-    "a", "an", "is", "are", "was", "my", "some", "one", "front", "back", "side", "small", "big", "little",
-}
-
-
-def _words(s: str) -> list[str]:
-    s = unicodedata.normalize("NFKD", s.lower())
-    return re.findall(r"[a-z0-9]+", "".join(ch for ch in s if not unicodedata.combining(ch)))
-
-
-def _check_answer(answer: str, item: dict) -> bool | None:
-    """Does the answer mention the item's hidden detail (or the text printed on it)?
-    Typo-tolerant keyword match: at least half the reference keywords must appear.
-    None when the item has nothing to compare with, so staff decide."""
-    refs = [r for r in (item.get("secretDetail"), item.get("text")) if r and r.strip()]
-    if not refs:
-        return None
-    said = _words(answer)
-    for ref in refs:
-        keys = [w for w in _words(ref) if w not in _STOPWORDS and (len(w) >= 3 or w.isdigit())] or _words(ref)
-        hits = sum(any(difflib.SequenceMatcher(None, k, w).ratio() >= 0.8 for w in said) for k in keys)
-        if keys and hits >= math.ceil(len(keys) / 2):
-            return True
-    return False
-
-
-def _failed_attempts(user_id: str, item_id: str) -> int:
-    """Wrong answers that still count towards the lock (staff unlocking clears them)."""
-    return len(storage.find("claim_attempts", userId=user_id, itemId=item_id, result="wrong", cleared=0))
-
-
-def _lock_message(item: dict) -> str:
-    desk = config.AIRPORTS.get(item.get("airport") or "", {}).get("desk", "lost & found desk")
-    return (f"Too many incorrect answers for this item. Please visit the {desk} with your ID "
-            "and boarding pass to claim it in person.")
-
-
 def _get_claim(claim_id: str) -> dict:
     claim = storage.get("claims", claim_id)
     if not claim:
@@ -507,7 +466,6 @@ def _staff_claim_view(claim: dict) -> dict:
         "claim": claim,
         "item": _staff_item(item),  # staff sees the real photo and secretDetail
         "report": _public_report(storage.get("lost_reports", claim["reportId"])),
-        "failedAttempts": _failed_attempts(claim["userId"], claim["itemId"]),
     }
 
 
@@ -521,9 +479,14 @@ def create_claim(body: ClaimCreate, user: dict = Depends(current_user)):
         raise HTTPException(403, "You can only claim items for your own reports")
     if item["status"] != "available":
         raise HTTPException(409, "Item is no longer available")
-    failed = _failed_attempts(report["userId"], item["id"])
-    if failed >= config.MAX_CLAIM_ATTEMPTS:
-        raise HTTPException(423, _lock_message(item))
+    # One claim per passenger and item: once the details are sent, they can't claim it again,
+    # whatever staff decide. A claim opened but never sent is reused.
+    mine = storage.find("claims", userId=user["id"], itemId=item["id"])
+    if any(c["status"] != "awaiting_answer" for c in mine):
+        raise HTTPException(409, "You already sent a claim for this item. Each item can only be claimed once.")
+    if mine:
+        claim = mine[0]
+        return {"id": claim["id"], "question": claim["question"], "status": claim["status"]}
     claim = storage.insert("claims", {
         "id": storage.new_id(),
         "token": secrets.token_urlsafe(16),
@@ -536,8 +499,7 @@ def create_claim(body: ClaimCreate, user: dict = Depends(current_user)):
         "status": "awaiting_answer",
     })
     storage.update("lost_reports", report["id"], status="matched", matchedItemId=item["id"])
-    return {"id": claim["id"], "question": claim["question"], "status": claim["status"],
-            "attemptsLeft": config.MAX_CLAIM_ATTEMPTS - failed}
+    return {"id": claim["id"], "question": claim["question"], "status": claim["status"]}
 
 
 @app.get("/claims", tags=["Claim & Pick-up"])
@@ -549,36 +511,24 @@ def list_claims(userId: str | None = None, user: dict = Depends(current_user)):
 
 @app.post("/claims/{claim_id}/answer", tags=["Claim & Pick-up"])
 def answer_claim(claim_id: str, body: ClaimAnswer, user: dict = Depends(current_user)):
-    """Checks the answer against the item's hidden detail and logs the attempt for staff.
-    Right (or nothing to compare with) -> staff review. Wrong -> try again, until
-    MAX_CLAIM_ATTEMPTS wrong answers lock the passenger out of this item."""
+    """The passenger's description of the item, sent once: it goes straight to staff review
+    (staff compare it with the hidden detail and decide) and is kept in the staff log."""
     claim = _get_claim(claim_id)
     if claim["userId"] != user["id"]:
         raise HTTPException(403, "This claim belongs to another passenger")
     if claim["status"] != "awaiting_answer":
         raise HTTPException(409, f"Claim is {claim['status']}")
     item = storage.get("found_items", claim["itemId"])
-    if _failed_attempts(claim["userId"], item["id"]) >= config.MAX_CLAIM_ATTEMPTS:
-        raise HTTPException(423, _lock_message(item))
     answer = body.answer.strip()
-    ok = _check_answer(answer, item)
+    if len(answer) < 3:
+        raise HTTPException(422, "Please describe the item in a bit more detail.")
     storage.insert("claim_attempts", {
         "id": storage.new_id(), "claimId": claim_id, "itemId": item["id"], "userId": claim["userId"],
-        "airport": item.get("airport"), "answer": answer,
-        "result": "unchecked" if ok is None else "correct" if ok else "wrong", "cleared": 0,
+        "airport": item.get("airport"), "answer": answer, "result": "submitted", "cleared": 0,
         "timestamp": storage.now(),
     })
-    if ok is not False:
-        storage.update("claims", claim_id, answer=answer, status="under_review")
-        return {"id": claim_id, "status": "under_review", "correct": ok, "attemptsLeft": None}
-
-    left = config.MAX_CLAIM_ATTEMPTS - _failed_attempts(claim["userId"], item["id"])
-    if left > 0:
-        return {"id": claim_id, "status": "awaiting_answer", "correct": False, "attemptsLeft": left,
-                "message": f"That doesn't match the details we hold. {left} attempt(s) left."}
-    storage.update("claims", claim_id, answer=answer, status="locked", reviewedAt=storage.now())
-    storage.update("lost_reports", claim["reportId"], status="searching", matchedItemId=None)
-    return {"id": claim_id, "status": "locked", "correct": False, "attemptsLeft": 0, "message": _lock_message(item)}
+    storage.update("claims", claim_id, answer=answer, status="under_review")
+    return {"id": claim_id, "status": "under_review"}
 
 
 @app.get("/claims/{claim_id}/qr", tags=["Claim & Pick-up"])
@@ -604,49 +554,24 @@ def staff_claims(status: str = "under_review", _: dict = Depends(require_staff))
     return [_staff_claim_view(c) for c in storage.find("claims", status=status)]
 
 
-class Unlock(BaseModel):
-    userId: str
-    itemId: str
-
-
 @app.get("/staff/claim-attempts", tags=["Claim & Pick-up"])
-def claim_attempts(airport: str | None = None, lockedOnly: bool = False, _: dict = Depends(require_staff)):
-    """Verification log: every answer a passenger typed for an item, grouped per passenger + item,
-    with how many wrong answers count towards the lock and whether they are locked out."""
+def claim_attempts(airport: str | None = None, _: dict = Depends(require_staff)):
+    """Claim log: the details each passenger sent for an item, grouped per passenger + item."""
     groups: dict[tuple[str, str], dict] = {}
     for a in storage.find("claim_attempts", airport=airport.upper() if airport else None):
         g = groups.setdefault((a["userId"], a["itemId"]), {"userId": a["userId"], "itemId": a["itemId"], "attempts": []})
-        g["attempts"].append({k: a[k] for k in ("id", "claimId", "answer", "result", "timestamp")} | {"cleared": bool(a["cleared"])})
+        g["attempts"].append({k: a[k] for k in ("id", "claimId", "answer", "result", "timestamp")})
     out = []
     for g in groups.values():
         item = storage.get("found_items", g["itemId"])
         if not item:
             continue
-        failed = sum(a["result"] == "wrong" and not a["cleared"] for a in g["attempts"])
         g |= {
             "item": _staff_item(item),  # staff view: real photo, secretDetail
-            "failed": failed,
-            "maxAttempts": config.MAX_CLAIM_ATTEMPTS,
-            "locked": failed >= config.MAX_CLAIM_ATTEMPTS,
             "lastAttempt": g["attempts"][0]["timestamp"],  # newest first
         }
-        if g["locked"] or not lockedOnly:
-            out.append(g)
+        out.append(g)
     return sorted(out, key=lambda g: g["lastAttempt"], reverse=True)
-
-
-@app.post("/staff/claim-attempts/unlock", tags=["Claim & Pick-up"])
-async def unlock_claims(body: Unlock, _: dict = Depends(require_staff)):
-    """Staff checked the passenger in person: wrong answers stop counting (they stay in the log)."""
-    wrong = storage.find("claim_attempts", userId=body.userId, itemId=body.itemId, result="wrong", cleared=0)
-    for a in wrong:
-        storage.update("claim_attempts", a["id"], cleared=1)
-    for c in storage.find("claims", userId=body.userId, itemId=body.itemId, status="locked"):
-        storage.update("claims", c["id"], status="rejected")
-    await notifier.send(body.userId, "You can try again",
-                        "The airport team unlocked your claim. You can verify ownership again.",
-                        {"itemId": body.itemId})
-    return {"userId": body.userId, "itemId": body.itemId, "cleared": len(wrong)}
 
 
 @app.post("/staff/claims/{claim_id}/review", tags=["Claim & Pick-up"])

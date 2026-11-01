@@ -72,7 +72,7 @@ class _StaffHomeState extends State<StaffHome> {
       const PickupScreen(),
       AttemptsScreen(key: _attemptsKey),
     ];
-    const titles = ['Smart Intake', 'Inventory', 'Ownership review', 'Pick-up desk', 'Verification log'];
+    const titles = ['Smart Intake', 'Inventory', 'Ownership review', 'Pick-up desk', 'Claim log'];
     return Scaffold(
       appBar: AppBar(
         title: Text('Staff · ${titles[_tab]}'),
@@ -114,7 +114,7 @@ class _StaffHomeState extends State<StaffHome> {
           NavigationDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2), label: 'Inventory'),
           NavigationDestination(icon: Icon(Icons.fact_check_outlined), selectedIcon: Icon(Icons.fact_check), label: 'Review'),
           NavigationDestination(icon: Icon(Icons.qr_code_scanner), label: 'Pick-up'),
-          NavigationDestination(icon: Icon(Icons.gpp_maybe_outlined), selectedIcon: Icon(Icons.gpp_maybe), label: 'Attempts'),
+          NavigationDestination(icon: Icon(Icons.history), label: 'Log'),
         ],
       ),
     );
