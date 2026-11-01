@@ -24,27 +24,20 @@ final _item = {
   'secretDetail': 'Engraved initials M.A. and a cat sticker',
 };
 
-Map<String, dynamic> _attempt(String answer, String result, String time, {bool cleared = false}) =>
-    {'id': answer.hashCode.toString(), 'claimId': 'c1', 'answer': answer, 'result': result, 'timestamp': time, 'cleared': cleared};
+Map<String, dynamic> _attempt(String answer, String time) =>
+    {'id': answer.hashCode.toString(), 'claimId': 'c1', 'answer': answer, 'result': 'submitted', 'timestamp': time};
 
 final _log = [
   {
-    'userId': 'pax-7f3a91c2', 'itemId': 'a1b2c3d4e5f6', 'item': _item, 'failed': 3, 'maxAttempts': 3, 'locked': true,
+    'userId': 'pax-7f3a91c2', 'itemId': 'a1b2c3d4e5f6', 'item': _item,
     'lastAttempt': '2026-10-31T10:42:00Z',
-    'attempts': [
-      _attempt('nothing special', 'wrong', '2026-10-31T10:42:00Z'),
-      _attempt('a dog sticker', 'wrong', '2026-10-31T10:41:00Z'),
-      _attempt('a red keychain', 'wrong', '2026-10-31T10:39:00Z'),
-    ],
+    'attempts': [_attempt('black backpack with a red keychain', '2026-10-31T10:42:00Z')],
   },
   {
-    'userId': 'pax-02c4e8aa', 'itemId': 'f00d', 'failed': 1, 'maxAttempts': 3, 'locked': false,
+    'userId': 'pax-02c4e8aa', 'itemId': 'f00d',
     'item': {..._item, 'id': 'f00dcafe0001', 'category': 'wallet', 'color': 'brown', 'location': 'Terminal 3 · Security', 'secretDetail': 'Oyster card inside'},
     'lastAttempt': '2026-10-31T09:20:00Z',
-    'attempts': [
-      _attempt('there is an oyster card inside', 'correct', '2026-10-31T09:20:00Z'),
-      _attempt('a train ticket', 'wrong', '2026-10-31T09:18:00Z'),
-    ],
+    'attempts': [_attempt('there is an oyster card inside', '2026-10-31T09:20:00Z')],
   },
 ];
 
@@ -53,10 +46,10 @@ MockClient _backend() => MockClient((req) async {
       Object? body = [];
       if (path == '/staff/claim-attempts') body = _log;
       if (path == '/claims' && req.method == 'POST') {
-        body = {'id': 'c9', 'question': 'Describe something distinctive about the item (contents, stickers, scratches, engravings).', 'status': 'awaiting_answer', 'attemptsLeft': 3};
+        body = {'id': 'c9', 'question': 'Describe something distinctive about the item (contents, stickers, scratches, engravings).', 'status': 'awaiting_answer'};
       }
       if (path.endsWith('/answer')) {
-        body = {'id': 'c9', 'status': 'awaiting_answer', 'correct': false, 'attemptsLeft': 2, 'message': "That doesn't match the details we hold. 2 attempt(s) left."};
+        body = {'id': 'c9', 'status': 'under_review'};
       }
       if (path == '/lost-reports' && req.method == 'POST') {
         body = {'report': {'id': 'r1', 'userId': 'pax', 'airport': 'LHR', 'category': 'backpack', 'timestamp': '2026-10-31T08:00:00Z', 'status': 'searching'}, 'matches': []};
@@ -93,17 +86,19 @@ void main() {
     AppData.instance.userId = 'pax-shots';
   });
 
-  testWidgets('staff verification log', skip: !_enabled, (tester) async {
+  testWidgets('staff claim log', skip: !_enabled, (tester) async {
     await _show(tester, const Scaffold(body: AttemptsScreen()));
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('../build/screenshots/attempts_log.png'));
   });
 
-  testWidgets('passenger wrong answer', skip: !_enabled, (tester) async {
+  testWidgets('passenger sends a claim once', skip: !_enabled, (tester) async {
     await _show(tester, VerifyClaimScreen(item: FoundItem.fromJson(_item)));
-    await tester.enterText(find.byType(TextField), 'a red keychain');
-    await tester.tap(find.text('Submit answer'));
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+    await tester.enterText(find.byType(TextField), 'Black backpack, initials M.A. engraved and a cat sticker');
+    await tester.pump();
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('../build/screenshots/verify_claim.png'));
+    await tester.tap(find.text('Send claim'));
     await tester.pumpAndSettle();
-    await expectLater(find.byType(MaterialApp), matchesGoldenFile('../build/screenshots/verify_wrong_answer.png'));
+    expect(find.text('Send your claim?'), findsOneWidget); // asks first: one claim per item
+    await expectLater(find.byType(MaterialApp), matchesGoldenFile('../build/screenshots/verify_claim_confirm.png'));
   });
 }

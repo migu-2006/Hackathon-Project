@@ -85,11 +85,6 @@ class ReviewScreenState extends State<ReviewScreen> {
             ]),
           ),
         ]),
-        if ((data['failedAttempts'] as int? ?? 0) > 0) ...[
-          const SizedBox(height: 10),
-          RBadge(trn(data['failedAttempts'] as int, '{n} wrong answer before this one · see Attempts', '{n} wrong answers before this one · see Attempts'),
-              icon: Icons.warning_amber, kind: BadgeKind.warning),
-        ],
         const SizedBox(height: 12),
         Eyebrow('Question', color: p.primary),
         Text('${claim['question']}', style: const TextStyle(fontSize: 13)),

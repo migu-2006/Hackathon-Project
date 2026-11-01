@@ -9,8 +9,7 @@ import '../../ui.dart';
 import '../../widgets.dart';
 
 /// Verification log: every answer passengers typed for an item's security question,
-/// grouped per passenger + item. After too many wrong answers the passenger is locked out
-/// of that item; staff can lift the lock once they've checked the person at the desk.
+/// grouped per passenger + item, so staff can spot someone guessing before they approve a claim.
 class AttemptsScreen extends StatefulWidget {
   const AttemptsScreen({super.key});
 
@@ -19,49 +18,15 @@ class AttemptsScreen extends StatefulWidget {
 }
 
 class AttemptsScreenState extends State<AttemptsScreen> {
-  bool _lockedOnly = false;
   late Future<List<Map<String, dynamic>>> _log = _fetch();
-  final _busy = <String>{};
 
-  Future<List<Map<String, dynamic>>> _fetch() =>
-      Api.instance.claimAttempts(airport: AppData.instance.airport.code, lockedOnly: _lockedOnly);
+  Future<List<Map<String, dynamic>>> _fetch() => Api.instance.claimAttempts(airport: AppData.instance.airport.code);
 
   Future<void> refresh() {
     setState(() {
       _log = _fetch();
     });
     return _log;
-  }
-
-  Future<void> _unlock(String userId, String itemId) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Unlock this passenger?'.tr),
-        content: Text(
-          'Only do this after checking their ID and boarding pass. '
-                  'Their wrong answers stay in the log but stop counting, and they can answer again.'
-              .tr,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancel'.tr)),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Unlock'.tr)),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    setState(() => _busy.add('$userId/$itemId'));
-    try {
-      await Api.instance.unlockClaims(userId, itemId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Unlocked: the passenger can try again.'.tr)));
-      refresh();
-    } catch (e) {
-      if (mounted) showError(context, e);
-    } finally {
-      if (mounted) setState(() => _busy.remove('$userId/$itemId'));
-    }
   }
 
   @override
@@ -73,41 +38,14 @@ class AttemptsScreenState extends State<AttemptsScreen> {
         if (snap.hasError) return EmptyState(icon: Icons.cloud_off, message: '${snap.error}');
         if (!snap.hasData) return const Center(child: CircularProgressIndicator());
         final groups = snap.data!;
-        final locked = groups.where((g) => g['locked'] == true).length;
         return PageBody(
           onRefresh: () async => refresh(),
           children: [
             PageHeader(
-              title: 'Verification log',
+              title: 'Claim log',
               subtitle: groups.isEmpty
-                  ? (_lockedOnly
-                        ? 'No passengers are locked out.'
-                        : 'No answers yet. Every ownership answer is logged here.')
-                  : trn(groups.length, '{n} passenger/item pair', '{n} passenger/item pairs') +
-                      (locked > 0 ? ' · ${'{n} locked out'.trf({'n': locked})}' : ''),
-            ),
-            Row(
-              children: [
-                FilterPill(
-                  label: 'All',
-              trailingIcon: null,
-                  active: !_lockedOnly,
-                  onTap: () {
-                    _lockedOnly = false;
-                    refresh();
-                  },
-                ),
-                const SizedBox(width: 8),
-                FilterPill(
-                  label: 'Locked only',
-              trailingIcon: null,
-                  active: _lockedOnly,
-                  onTap: () {
-                    _lockedOnly = true;
-                    refresh();
-                  },
-                ),
-              ],
+                  ? 'No claims yet. What passengers send for an item is logged here.'
+                  : trn(groups.length, '{n} claim sent', '{n} claims sent'),
             ),
             const SizedBox(height: 6),
             for (final g in groups) _card(p, g),
@@ -120,12 +58,8 @@ class AttemptsScreenState extends State<AttemptsScreen> {
   Widget _card(Palette p, Map<String, dynamic> g) {
     final item = FoundItem.fromJson(g['item']);
     final userId = g['userId'] as String;
-    final failed = g['failed'] as int;
-    final max = g['maxAttempts'] as int;
-    final isLocked = g['locked'] == true;
     final attempts = [for (final a in g['attempts'] as List) Map<String, dynamic>.from(a)];
     return SurfaceCard(
-      highlighted: isLocked,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -148,39 +82,12 @@ class AttemptsScreenState extends State<AttemptsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              if (isLocked)
-                const RBadge('Locked out', icon: Icons.lock, kind: BadgeKind.warning)
-              else
-                RBadge(
-                  '{failed} / {max} wrong'.trf({'failed': failed, 'max': max}),
-                  icon: Icons.shield_outlined,
-                  kind: failed > 0 ? BadgeKind.warning : BadgeKind.neutral,
-                ),
-              RBadge(trn(attempts.length, '{n} attempt', '{n} attempts'), kind: BadgeKind.neutral),
-            ],
-          ),
           if (item.secretDetail?.isNotEmpty == true) ...[
             const SizedBox(height: 8),
             Text('Hidden detail: {detail}'.trf({'detail': item.secretDetail}), style: TextStyle(color: p.warning, fontSize: 12.5)),
           ],
           const SizedBox(height: 6),
           for (final a in attempts) _attemptRow(p, a),
-          if (isLocked) ...[
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _busy.contains('$userId/${item.id}') ? null : () => _unlock(userId, item.id),
-                icon: const Icon(Icons.lock_open),
-                label: Text('Unlock after ID check'.tr),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -188,9 +95,10 @@ class AttemptsScreenState extends State<AttemptsScreen> {
 
   Widget _attemptRow(Palette p, Map<String, dynamic> a) {
     final (icon, color, label) = switch (a['result']) {
+      // 'correct' / 'wrong' come from the old automatic check, before every claim went to staff.
       'correct' => (Icons.check_circle, p.success, 'Matched'),
-      'wrong' => (Icons.cancel, const Color(0xFFE5484D), a['cleared'] == true ? 'Wrong · cleared' : 'Wrong'),
-      _ => (Icons.help, p.muted, 'Sent to review'),
+      'wrong' => (Icons.cancel, const Color(0xFFE5484D), 'Wrong'),
+      _ => (Icons.send_outlined, p.primary, 'Sent to review'),
     };
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),

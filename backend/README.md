@@ -73,10 +73,9 @@ Without SMTP settings the code is printed in the server log instead (handy on a 
 | B – Passenger | GET | `/map/zones` | Terminal zones with pinned items for the map |
 | B – Passenger | WS | `/ws/{userId}` | Realtime match notifications (also `GET /users/{id}/notifications`) |
 | C – Claim | POST | `/claims` | Start a claim → returns verification question |
-| C – Claim | POST | `/claims/{id}/answer` | Answer, checked against the hidden detail: right → staff review, wrong → retry; after `LF_MAX_CLAIM_ATTEMPTS` (3) wrong answers the passenger is locked out of that item (HTTP 423) |
+| C – Claim | POST | `/claims/{id}/answer` | The passenger's description of the item, sent once and straight to staff review (staff compare it with the hidden detail). One claim per passenger and item, even if rejected |
 | C – Claim | GET | `/claims/{id}/qr` | QR code PNG |
-| C – Claim | GET | `/staff/claim-attempts` | Verification log per passenger + item (`airport`, `lockedOnly`) |
-| C – Claim | POST | `/staff/claim-attempts/unlock` | Lift a lockout after an ID check (`userId`, `itemId`) |
+| C – Claim | GET | `/staff/claim-attempts` | Claim log: what each passenger sent per item (`airport`) |
 | C – Claim | GET | `/claims/scan/{token}` | Desk view after scanning (shows hidden `secretDetail`) |
 | C – Claim | POST | `/claims/scan/{token}/decision` | Approve → item `claimed`, report `recovered` |
 

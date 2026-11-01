@@ -228,7 +228,8 @@ class AppData extends ChangeNotifier {
   /// Latest claim on an item, including a lockout after too many wrong answers.
   Claim? claimForItem(String itemId) {
     for (final c in claims) {
-      if (c.itemId == itemId && c.status != 'rejected') return c;
+      // Rejected claims count too: a passenger can claim an item only once.
+      if (c.itemId == itemId) return c;
     }
     return null;
   }

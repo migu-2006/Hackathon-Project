@@ -92,9 +92,14 @@ class ItemDetailsScreen extends StatelessWidget {
           ),
           if (item.status != 'available')
             const NoteCard(icon: Icons.check_circle_outline, title: 'This item has already been returned to its owner.')
-          else if (existingClaim?.status == 'locked')
-            _LockedNote(desk: '{airport} {desk}'.trf({'airport': airport.short, 'desk': airport.desk.tr}))
-          else if (existingClaim != null) ...[
+          else if (existingClaim != null && (existingClaim.status == 'rejected' || existingClaim.status == 'locked'))
+            const NoteCard(
+              icon: Icons.block,
+              title: "This item can't be claimed again",
+              body: 'The airport team did not approve your claim, and each item can only be claimed once. '
+                  'If you think this is a mistake, contact the airport team.',
+            )
+          else if (existingClaim != null && existingClaim.status != 'awaiting_answer') ...[
             const NoteCard(
               icon: Icons.hourglass_top,
               title: 'You already claimed this item',
@@ -143,9 +148,6 @@ class _VerifyClaimScreenState extends State<VerifyClaimScreen> {
   final _answer = TextEditingController();
   String? _claimId;
   String? _question;
-  int _attemptsLeft = 3;
-  String? _wrong; // feedback after an incorrect answer
-  bool _locked = false;
   bool _busy = true;
   Object? _error;
 
@@ -172,11 +174,7 @@ class _VerifyClaimScreenState extends State<VerifyClaimScreen> {
       setState(() {
         _claimId = c.id;
         _question = c.question;
-        _attemptsLeft = c.attemptsLeft;
       });
-    } on ApiException catch (e) {
-      // 423: already locked out of this item.
-      setState(() => e.message.startsWith('Too many') ? _locked = true : _error = e);
     } catch (e) {
       setState(() => _error = e);
     } finally {
@@ -189,32 +187,29 @@ class _VerifyClaimScreenState extends State<VerifyClaimScreen> {
       showError(context, 'Please share a bit more detail');
       return;
     }
+    final send = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Send your claim?'.tr),
+        content: Text(
+          'You can claim this item only once. After you send it you can\'t change your description '
+                  'or claim this item again, even if the airport team doesn\'t approve it.'
+              .tr,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Keep editing'.tr)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Send'.tr)),
+        ],
+      ),
+    );
+    if (send != true || !mounted) return;
     setState(() => _busy = true);
     try {
-      final r = await Api.instance.answerClaim(_claimId!, _answer.text.trim());
-      if (r.status == 'awaiting_answer') {
-        setState(() {
-          _attemptsLeft = r.attemptsLeft ?? _attemptsLeft - 1;
-          _wrong = "That doesn't match the details we hold. Check and try again.";
-          _answer.clear();
-        });
-        return;
-      }
+      await Api.instance.answerClaim(_claimId!, _answer.text.trim());
       await AppData.instance.refresh();
       if (!mounted) return;
-      if (r.status == 'locked') {
-        setState(() => _locked = true);
-        return;
-      }
       Navigator.of(context).popUntil((r) => r.isFirst);
       AppShell.goTo(ShellTab.reports, reset: true);
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      if (e.message.startsWith('Too many')) {
-        setState(() => _locked = true);
-      } else {
-        showError(context, e);
-      }
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -260,22 +255,7 @@ class _VerifyClaimScreenState extends State<VerifyClaimScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          if (_locked) ...[
-            _LockedNote(
-              desk: () {
-                final a = AppData.instance.airportByCode(item.airport);
-                return '{airport} {desk}'.trf({'airport': a.short, 'desk': a.desk.tr});
-              }(),
-            ),
-            const SizedBox(height: 12),
-            PrimaryButton(
-              label: 'Back to my reports',
-              onPressed: () {
-                Navigator.of(context).popUntil((r) => r.isFirst);
-                AppShell.goTo(ShellTab.reports, reset: true);
-              },
-            ),
-          ] else if (_error != null)
+          if (_error != null)
             NoteCard(icon: Icons.error_outline, title: "We couldn't start the claim", body: '$_error')
           else if (_question == null)
             const Padding(
@@ -287,35 +267,6 @@ class _VerifyClaimScreenState extends State<VerifyClaimScreen> {
             const SizedBox(height: 6),
             Text(_question!, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, height: 1.35)),
             const SizedBox(height: 8),
-            if (_wrong != null) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: p.warningFill, borderRadius: BorderRadius.circular(8)),
-                child: Row(
-                  children: [
-                    Icon(Icons.error_outline, color: p.warning, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _wrong!.tr,
-                        style: TextStyle(color: p.warning, fontSize: 13, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-            Align(
-              alignment: Alignment.centerLeft,
-              child: RBadge(
-                trn(_attemptsLeft, '{n} attempt left', '{n} attempts left'),
-                icon: Icons.shield_outlined,
-                kind: _attemptsLeft <= 1 ? BadgeKind.warning : BadgeKind.neutral,
-              ),
-            ),
-            const SizedBox(height: 8),
             TextField(
               controller: _answer,
               maxLines: 4,
@@ -324,11 +275,12 @@ class _VerifyClaimScreenState extends State<VerifyClaimScreen> {
             ),
             const NoteCard(
               icon: Icons.lock_outline,
-              title: 'Similarity is not proof of ownership',
-              body: 'The team compares your answer with details only the owner would know, then issues a pickup pass.',
+              title: 'One claim per item',
+              body: 'The airport team reviews your description and decides, then issues a pickup pass. '
+                  'You can send a claim for this item only once.',
             ),
             const SizedBox(height: 14),
-            PrimaryButton(label: 'Submit answer', icon: Icons.send_outlined, busy: _busy, onPressed: _submit),
+            PrimaryButton(label: 'Send claim', icon: Icons.send_outlined, busy: _busy, onPressed: _submit),
           ],
           const SizedBox(height: 6),
           const HelpLink(),
@@ -336,21 +288,6 @@ class _VerifyClaimScreenState extends State<VerifyClaimScreen> {
       ),
     );
   }
-}
-
-/// Shown once a passenger gave too many wrong answers for an item.
-class _LockedNote extends StatelessWidget {
-  final String desk;
-  const _LockedNote({required this.desk});
-
-  @override
-  Widget build(BuildContext context) => NoteCard(
-    icon: Icons.lock_outline,
-    title: 'Claim locked for this item',
-    body: 'Too many answers did not match the details we hold. To protect the owner, you can only claim '
-            'this item in person now: visit the {desk} with your ID and boarding pass.'
-        .trf({'desk': desk}),
-  );
 }
 
 /// Under a blurred photo: why it's blurred and how to see it clearly.

@@ -369,7 +369,8 @@ class ItemImage extends StatelessWidget {
     final fallback = Container(
       color: p.tint,
       alignment: Alignment.center,
-      child: Icon(categoryIcon(category), color: p.primary, size: size * 0.4),
+      // size is infinite for full-width images (item details): scale the icon to the height then.
+      child: Icon(categoryIcon(category), color: p.primary, size: (size.isFinite ? size : height ?? 64) * 0.4),
     );
     final image = url == null || url!.isEmpty
         ? fallback

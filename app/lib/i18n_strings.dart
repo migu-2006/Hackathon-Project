@@ -295,6 +295,22 @@ const translations = <String, (String, String)>{
       ('Fotografie estompată pentru a proteja proprietarul. Căutați cu o fotografie a propriului obiect ca s-o vedeți clar dacă se potrivește.',
           'Foto difuminada para proteger al dueño. Busque con una foto de su propio objeto para verla nítida si coincide.'),
 
+  "This item can't be claimed again": ('Acest obiect nu mai poate fi revendicat', 'Este objeto ya no se puede reclamar'),
+  'The airport team did not approve your claim, and each item can only be claimed once. If you think this is a mistake, contact the airport team.':
+      ('Echipa aeroportului nu v-a aprobat revendicarea, iar fiecare obiect poate fi revendicat o singură dată. Dacă credeți că este o greșeală, contactați echipa aeroportului.',
+          'El equipo del aeropuerto no aprobó su reclamación y cada objeto solo puede reclamarse una vez. Si cree que es un error, contacte con el equipo del aeropuerto.'),
+  'Send your claim?': ('Trimiteți revendicarea?', '¿Enviar su reclamación?'),
+  "You can claim this item only once. After you send it you can't change your description or claim this item again, even if the airport team doesn't approve it.":
+      ('Puteți revendica acest obiect o singură dată. După trimitere nu mai puteți modifica descrierea și nici revendica din nou obiectul, chiar dacă echipa aeroportului nu o aprobă.',
+          'Solo puede reclamar este objeto una vez. Después de enviarla no podrá cambiar su descripción ni volver a reclamar el objeto, aunque el equipo del aeropuerto no la apruebe.'),
+  'Keep editing': ('Continuați editarea', 'Seguir editando'),
+  'Send': ('Trimite', 'Enviar'),
+  'One claim per item': ('O singură revendicare per obiect', 'Una reclamación por objeto'),
+  'The airport team reviews your description and decides, then issues a pickup pass. You can send a claim for this item only once.':
+      ('Echipa aeroportului vă analizează descrierea și decide, apoi emite un permis de ridicare. Puteți trimite o singură revendicare pentru acest obiect.',
+          'El equipo del aeropuerto revisa su descripción y decide; después emite un pase de recogida. Solo puede enviar una reclamación para este objeto.'),
+  'Send claim': ('Trimite revendicarea', 'Enviar reclamación'),
+
   // ---------------------------------------------------------------- passenger: map
   '{airport} map': ('Harta {airport}', 'Mapa de {airport}'),
   '{n} items handed in here': ('{n} obiect predat aici|{n} obiecte predate aici|{n} de obiecte predate aici', '{n} objeto entregado aquí|{n} objetos entregados aquí'),
@@ -589,6 +605,10 @@ const translations = <String, (String, String)>{
   'Claim {id} · {time}': ('Revendicare {id} · {time}', 'Reclamación {id} · {time}'),
   '{n} wrong answers before this one · see Attempts': ('{n} răspuns greșit înaintea acestuia · vedeți Încercări|{n} răspunsuri greșite înaintea acestuia · vedeți Încercări|{n} de răspunsuri greșite înaintea acestuia · vedeți Încercări',
       '{n} respuesta incorrecta antes de esta · vea Intentos|{n} respuestas incorrectas antes de esta · vea Intentos'),
+  'Claim log': ('Jurnalul revendicărilor', 'Registro de reclamaciones'),
+  'Log': ('Jurnal', 'Registro'),
+  'No claims yet. What passengers send for an item is logged here.': ('Nicio revendicare încă. Ce trimit pasagerii pentru un obiect este înregistrat aici.', 'Aún no hay reclamaciones. Lo que envían los pasajeros sobre un objeto se registra aquí.'),
+  '{n} claims sent': ('{n} revendicare trimisă|{n} revendicări trimise|{n} de revendicări trimise', '{n} reclamación enviada|{n} reclamaciones enviadas'),
   'Unlock this passenger?': ('Deblocați acest pasager?', '¿Desbloquear a este pasajero?'),
   'Only do this after checking their ID and boarding pass. Their wrong answers stay in the log but stop counting, and they can answer again.':
       ('Faceți asta doar după ce îi verificați actul de identitate și cartea de îmbarcare. Răspunsurile greșite rămân în jurnal, dar nu mai contează, iar pasagerul poate răspunde din nou.',
