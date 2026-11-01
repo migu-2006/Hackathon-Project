@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../api.dart';
+import '../../i18n.dart';
 import '../../models.dart';
 import '../../theme.dart';
 import '../../ui.dart';
@@ -32,7 +33,7 @@ class ReviewScreenState extends State<ReviewScreen> {
       await Api.instance.reviewClaim(claimId, approved);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(approved ? 'Approved: the passenger received a pickup pass.' : 'Claim rejected.'),
+        content: Text((approved ? 'Approved: the passenger received a pickup pass.' : 'Claim rejected.').tr),
       ));
       refresh();
     } catch (e) {
@@ -56,7 +57,7 @@ class ReviewScreenState extends State<ReviewScreen> {
             title: 'Ownership review',
             subtitle: claims.isEmpty
                 ? 'No claims waiting. New claims appear here after passengers answer.'
-                : '${claims.length} claim(s) waiting for a decision.',
+                : trn(claims.length, '{n} claim waiting for a decision.', '{n} claims waiting for a decision.'),
           ),
           for (final c in claims) _card(context, p, c),
         ]);
@@ -78,8 +79,8 @@ class ReviewScreenState extends State<ReviewScreen> {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(itemTitle(item.color, item.category), style: const TextStyle(fontWeight: FontWeight.w600)),
-              Text('${item.location} · found ${fmtDay(item.timestamp)}', style: TextStyle(color: p.muted, fontSize: 12)),
-              Text('Claim ${id.toUpperCase()} · ${fmtDayTime(DateTime.parse(claim['timestamp']).toLocal())}',
+              Text('{place} · found {date}'.trf({'place': item.location, 'date': fmtDay(item.timestamp)}), style: TextStyle(color: p.muted, fontSize: 12)),
+              Text('Claim {id} · {time}'.trf({'id': id.toUpperCase(), 'time': fmtDayTime(DateTime.parse(claim['timestamp']).toLocal())}),
                   style: TextStyle(color: p.muted, fontSize: 12)),
             ]),
           ),
@@ -98,9 +99,11 @@ class ReviewScreenState extends State<ReviewScreen> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Eyebrow('Compare with · staff only', color: p.warning),
             const SizedBox(height: 4),
-            Text('Hidden detail: ${item.secretDetail?.isNotEmpty == true ? item.secretDetail : '—'}', style: const TextStyle(fontSize: 13)),
-            if (item.text.isNotEmpty) Text('Text on item: "${item.text}"', style: const TextStyle(fontSize: 13)),
-            if (report.description.isNotEmpty) Text('Report: ${report.description}', style: const TextStyle(fontSize: 13)),
+            Text('Hidden detail: {detail}'.trf({'detail': item.secretDetail?.isNotEmpty == true ? item.secretDetail : '—'}),
+                style: const TextStyle(fontSize: 13)),
+            if (item.text.isNotEmpty) Text('Text on item: "{text}"'.trf({'text': item.text}), style: const TextStyle(fontSize: 13)),
+            if (report.description.isNotEmpty)
+              Text('Report: {text}'.trf({'text': report.description}), style: const TextStyle(fontSize: 13)),
           ]),
         ),
         const SizedBox(height: 12),
@@ -109,7 +112,7 @@ class ReviewScreenState extends State<ReviewScreen> {
             child: OutlinedButton.icon(
               onPressed: busy ? null : () => _decide(id, false),
               icon: const Icon(Icons.close),
-              label: const Text('Reject'),
+              label: Text('Reject'.tr),
             ),
           ),
           const SizedBox(width: 10),
@@ -118,7 +121,7 @@ class ReviewScreenState extends State<ReviewScreen> {
               onPressed: busy ? null : () => _decide(id, true),
               style: FilledButton.styleFrom(backgroundColor: p.success),
               icon: const Icon(Icons.check),
-              label: const Text('Approve'),
+              label: Text('Approve'.tr),
             ),
           ),
         ]),

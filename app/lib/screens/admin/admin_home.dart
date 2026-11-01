@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../api.dart';
 import '../../app_state.dart';
+import '../../i18n.dart';
 import '../../models.dart';
 import '../../theme.dart';
 import '../../ui.dart';
@@ -52,13 +53,13 @@ class _AdminHomeState extends State<AdminHome> {
     final p = Palette.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Administrator'),
+        title: Text('Administrator'.tr),
         actions: [RefreshButton(onRefresh: _reload), const AccountButton(), const SizedBox(width: 8)],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _create,
         icon: const Icon(Icons.person_add_alt_1),
-        label: const Text('Add staff account'),
+        label: Text('Add staff account'.tr),
       ),
       body: FutureBuilder<List<AppUser>>(
         future: _users,
@@ -95,16 +96,16 @@ class _AdminHomeState extends State<AdminHome> {
             ]),
             const SizedBox(height: 12),
             TextField(
-              decoration: const InputDecoration(hintText: 'Search by name or email', prefixIcon: Icon(Icons.search)),
+              decoration: InputDecoration(hintText: 'Search by name or email'.tr, prefixIcon: const Icon(Icons.search)),
               onChanged: (v) => setState(() => _query = v.trim()),
             ),
             const SizedBox(height: 10),
             Wrap(spacing: 8, runSpacing: 8, children: [
               for (final (role, label) in [
-                (null, 'All · ${all.length}'),
-                ('passenger', 'Passengers · ${count('passenger')}'),
-                ('staff', 'Staff · ${count('staff')}'),
-                ('admin', 'Admins · ${count('admin')}'),
+                (null, 'All · {n}'.trf({'n': all.length})),
+                ('passenger', 'Passengers · {n}'.trf({'n': count('passenger')})),
+                ('staff', 'Staff · {n}'.trf({'n': count('staff')})),
+                ('admin', 'Admins · {n}'.trf({'n': count('admin')})),
               ])
                 FilterPill(label: label, trailingIcon: null, active: _role == role, onTap: () => setState(() => _role = role)),
             ]),
@@ -112,7 +113,7 @@ class _AdminHomeState extends State<AdminHome> {
             if (shown.isEmpty)
               Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('No accounts here yet.', textAlign: TextAlign.center, style: TextStyle(color: p.muted)),
+                child: Text('No accounts here yet.'.tr, textAlign: TextAlign.center, style: TextStyle(color: p.muted)),
               ),
             for (final u in shown)
               SurfaceCard(
@@ -130,7 +131,7 @@ class _AdminHomeState extends State<AdminHome> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(u.name + (u.id == AppData.instance.user?.id ? ' (you)' : ''),
+                      Text(u.name + (u.id == AppData.instance.user?.id ? ' ${'(you)'.tr}' : ''),
                           style: const TextStyle(fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
                       Text(u.email, style: TextStyle(color: p.muted, fontSize: 12), overflow: TextOverflow.ellipsis),
                     ]),
@@ -172,8 +173,8 @@ class _ShortcutCard extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Icon(icon, color: p.primary),
         const SizedBox(height: 8),
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-        Text(subtitle, style: TextStyle(color: p.muted, fontSize: 12)),
+        Text(title.tr, style: const TextStyle(fontWeight: FontWeight.w600)),
+        Text(subtitle.tr, style: TextStyle(color: p.muted, fontSize: 12)),
       ]),
     );
   }
@@ -189,9 +190,9 @@ String _newPassword() {
 Widget _airportField(String? value, ValueChanged<String?> onChanged) => DropdownButtonFormField<String?>(
       // Airports may not be loaded yet: an unknown code shows as "Any" rather than crashing the dropdown.
       initialValue: AppData.instance.airports.any((a) => a.code == value) ? value : null,
-      decoration: const InputDecoration(labelText: 'Home airport', prefixIcon: Icon(Icons.flight_outlined)),
+      decoration: InputDecoration(labelText: 'Home airport'.tr, prefixIcon: const Icon(Icons.flight_outlined)),
       items: [
-        const DropdownMenuItem(value: null, child: Text('Any airport')),
+        DropdownMenuItem(value: null, child: Text('Any airport'.tr)),
         for (final a in AppData.instance.airports) DropdownMenuItem(value: a.code, child: Text('${a.code} · ${a.short}')),
       ],
       onChanged: onChanged,
@@ -202,11 +203,11 @@ Future<void> _showCredentials(BuildContext context, AppUser user, String passwor
       context: context,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.check_circle, color: Colors.green, size: 40),
-        title: Text('${user.roleLabel} account ready'),
+        title: Text('{role} account ready'.trf({'role': user.roleLabel.tr})),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('Give these details to the account owner. The password is not shown again.'),
+          Text('Give these details to the account owner. The password is not shown again.'.tr),
           const SizedBox(height: 12),
-          SelectableText('Email: ${user.email}\nPassword: $password',
+          SelectableText('${'Email'.tr}: ${user.email}\n${'Password'.tr}: $password',
               style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600)),
         ]),
         actions: [
@@ -214,9 +215,9 @@ Future<void> _showCredentials(BuildContext context, AppUser user, String passwor
             onPressed: () => Clipboard.setData(ClipboardData(text: 'SkyFindr ${user.roleLabel.toLowerCase()} sign-in\n'
                 'Email: ${user.email}\nPassword: $password')),
             icon: const Icon(Icons.copy, size: 18),
-            label: const Text('Copy'),
+            label: Text('Copy'.tr),
           ),
-          FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done')),
+          FilledButton(onPressed: () => Navigator.pop(ctx), child: Text('Done'.tr)),
         ],
       ),
     );
@@ -253,7 +254,7 @@ class _NewAccountDialogState extends State<_NewAccountDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('New account'),
+        title: Text('New account'.tr),
         content: SizedBox(
           width: 400,
           child: Form(
@@ -262,9 +263,9 @@ class _NewAccountDialogState extends State<_NewAccountDialog> {
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 SegmentedButton<String>(
                   showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: 'staff', label: Text('Staff'), icon: Icon(Icons.badge_outlined)),
-                    ButtonSegment(value: 'admin', label: Text('Admin'), icon: Icon(Icons.admin_panel_settings_outlined)),
+                  segments: [
+                    ButtonSegment(value: 'staff', label: Text('Staff'.tr), icon: const Icon(Icons.badge_outlined)),
+                    ButtonSegment(value: 'admin', label: Text('Admin'.tr), icon: const Icon(Icons.admin_panel_settings_outlined)),
                   ],
                   selected: {_role},
                   onSelectionChanged: (s) => setState(() => _role = s.first),
@@ -273,29 +274,29 @@ class _NewAccountDialogState extends State<_NewAccountDialog> {
                 TextFormField(
                   controller: _name,
                   textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(labelText: 'Full name', prefixIcon: Icon(Icons.person_outline)),
-                  validator: (v) => (v ?? '').trim().isEmpty ? 'Enter a name' : null,
+                  decoration: InputDecoration(labelText: 'Full name'.tr, prefixIcon: const Icon(Icons.person_outline)),
+                  validator: (v) => (v ?? '').trim().isEmpty ? 'Enter a name'.tr : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _email,
                   keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.mail_outline)),
-                  validator: (v) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch((v ?? '').trim()) ? null : 'Enter a valid email',
+                  decoration: InputDecoration(labelText: 'Email'.tr, prefixIcon: const Icon(Icons.mail_outline)),
+                  validator: (v) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch((v ?? '').trim()) ? null : 'Enter a valid email'.tr,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _password,
                   decoration: InputDecoration(
-                    labelText: 'Password',
+                    labelText: 'Password'.tr,
                     prefixIcon: const Icon(Icons.lock_outline),
                     suffixIcon: IconButton(
-                      tooltip: 'Generate another',
+                      tooltip: 'Generate another'.tr,
                       icon: const Icon(Icons.refresh),
                       onPressed: () => setState(() => _password.text = _newPassword()),
                     ),
                   ),
-                  validator: (v) => (v ?? '').length < 6 ? 'At least 6 characters' : null,
+                  validator: (v) => (v ?? '').length < 6 ? 'At least 6 characters'.tr : null,
                 ),
                 if (_role == 'staff') ...[
                   const SizedBox(height: 12),
@@ -306,8 +307,8 @@ class _NewAccountDialogState extends State<_NewAccountDialog> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(onPressed: _busy ? null : _save, child: const Text('Create account')),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel'.tr)),
+          FilledButton(onPressed: _busy ? null : _save, child: Text('Create account'.tr)),
         ],
       );
 }
@@ -354,14 +355,14 @@ class _UserSheetState extends State<_UserSheet> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Delete ${_user.name}?'),
-        content: const Text('The account is removed and signed out. Reports and claims it made stay in the records.'),
+        title: Text('Delete {name}?'.trf({'name': _user.name})),
+        content: Text('The account is removed and signed out. Reports and claims it made stay in the records.'.tr),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancel'.tr)),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE5484D)),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
+            child: Text('Delete'.tr),
           ),
         ],
       ),
@@ -399,21 +400,21 @@ class _UserSheetState extends State<_UserSheet> {
               if (_busy) const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
             ]),
             const SizedBox(height: 20),
-            const Text('Role', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+            Text('Role'.tr, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
             const SizedBox(height: 8),
             SegmentedButton<String>(
               showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(value: 'passenger', label: Text('Passenger')),
-                ButtonSegment(value: 'staff', label: Text('Staff')),
-                ButtonSegment(value: 'admin', label: Text('Admin')),
+              segments: [
+                ButtonSegment(value: 'passenger', label: Text('Passenger'.tr)),
+                ButtonSegment(value: 'staff', label: Text('Staff'.tr)),
+                ButtonSegment(value: 'admin', label: Text('Admin'.tr)),
               ],
               selected: {_user.role},
               onSelectionChanged: _isMe || _busy ? null : (s) => _update(role: s.first),
             ),
             if (_isMe) Padding(
               padding: const EdgeInsets.only(top: 6),
-              child: Text('You can\'t change your own role.', style: TextStyle(color: p.muted, fontSize: 12)),
+              child: Text('You can\'t change your own role.'.tr, style: TextStyle(color: p.muted, fontSize: 12)),
             ),
             if (_user.role == 'staff') ...[
               const SizedBox(height: 16),
@@ -423,22 +424,22 @@ class _UserSheetState extends State<_UserSheet> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.key_outlined),
-              title: const Text('Reset password'),
-              subtitle: const Text('Creates a new password and signs the account out'),
+              title: Text('Reset password'.tr),
+              subtitle: Text('Creates a new password and signs the account out'.tr),
               onTap: _busy ? null : _resetPassword,
             ),
             if (!_isMe) ...[
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(_user.disabled ? Icons.check_circle_outline : Icons.block),
-                title: Text(_user.disabled ? 'Enable account' : 'Disable account'),
-                subtitle: Text(_user.disabled ? 'Lets the account sign in again' : 'Signs the account out and blocks sign-in'),
+                title: Text((_user.disabled ? 'Enable account' : 'Disable account').tr),
+                subtitle: Text((_user.disabled ? 'Lets the account sign in again' : 'Signs the account out and blocks sign-in').tr),
                 onTap: _busy ? null : () => _update(disabled: !_user.disabled),
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.delete_outline, color: Color(0xFFE5484D)),
-                title: const Text('Delete account', style: TextStyle(color: Color(0xFFE5484D))),
+                title: Text('Delete account'.tr, style: const TextStyle(color: Color(0xFFE5484D))),
                 onTap: _busy ? null : _delete,
               ),
             ],

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'api.dart';
+import 'i18n.dart';
 import 'models.dart';
 
 Color colorFromHex(String hex) {
@@ -36,15 +37,15 @@ String capitalize(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(
 
 String timeAgo(DateTime t) {
   final d = DateTime.now().difference(t);
-  if (d.inMinutes < 1) return 'just now';
-  if (d.inHours < 1) return '${d.inMinutes} min ago';
-  if (d.inDays < 1) return '${d.inHours} h ago';
-  return '${d.inDays} d ago';
+  if (d.inMinutes < 1) return 'just now'.tr;
+  if (d.inHours < 1) return '{n} min ago'.trf({'n': d.inMinutes});
+  if (d.inDays < 1) return '{n} h ago'.trf({'n': d.inHours});
+  return '{n} d ago'.trf({'n': d.inDays});
 }
 
 void showError(BuildContext context, Object error) {
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-    content: Text('$error'),
+    content: Text(error is String ? error.tr : '$error'),
     backgroundColor: Theme.of(context).colorScheme.error,
   ));
 }
@@ -67,12 +68,12 @@ Future<XFile?> pickPhoto(BuildContext context) async {
       child: Wrap(children: [
         ListTile(
           leading: const Icon(Icons.photo_camera),
-          title: const Text('Take a photo'),
+          title: Text('Take a photo'.tr),
           onTap: () => Navigator.pop(ctx, ImageSource.camera),
         ),
         ListTile(
           leading: const Icon(Icons.photo_library),
-          title: Text(kIsWeb ? 'Upload a file' : 'Choose from gallery'),
+          title: Text(kIsWeb ? 'Upload a file'.tr : 'Choose from gallery'.tr),
           onTap: () => Navigator.pop(ctx, ImageSource.gallery),
         ),
       ]),
@@ -126,7 +127,7 @@ class PhotoPlaceholder extends StatelessWidget {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Icon(Icons.add_a_photo, size: 48, color: scheme.primary),
             const SizedBox(height: 8),
-            Text(label, style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w600)),
+            Text(label.tr, style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w600)),
           ]),
         ),
       ),
@@ -192,13 +193,13 @@ class ItemCard extends StatelessWidget {
                   Icon(categoryIcon(item.category), size: 18),
                   const SizedBox(width: 6),
                   Flexible(
-                    child: Text(capitalize(item.category),
+                    child: Text(categoryName(item.category),
                         style: theme.textTheme.titleMedium, overflow: TextOverflow.ellipsis),
                   ),
                   const SizedBox(width: 8),
                   ColorDot(namedColor(item.color)),
                   const SizedBox(width: 4),
-                  Flexible(child: Text(item.color, style: theme.textTheme.bodySmall, overflow: TextOverflow.ellipsis)),
+                  Flexible(child: Text(item.color.isEmpty ? '' : colorName(item.color), style: theme.textTheme.bodySmall, overflow: TextOverflow.ellipsis)),
                 ]),
                 const SizedBox(height: 4),
                 Row(children: [
@@ -211,7 +212,7 @@ class ItemCard extends StatelessWidget {
                   ),
                 ]),
                 if (item.text.isNotEmpty)
-                  Text('Text: "${item.text}"', style: theme.textTheme.bodySmall, overflow: TextOverflow.ellipsis),
+                  Text('Text: "{text}"'.trf({'text': item.text}), style: theme.textTheme.bodySmall, overflow: TextOverflow.ellipsis),
               ]),
             ),
             if (score != null) ScoreBadge(score!),
@@ -252,7 +253,7 @@ class EmptyState extends StatelessWidget {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Icon(icon, size: 64, color: Theme.of(context).disabledColor),
             const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).disabledColor)),
+            Text(message.tr, textAlign: TextAlign.center, style: TextStyle(color: Theme.of(context).disabledColor)),
           ]),
         ),
       );
@@ -262,7 +263,7 @@ DropdownButtonFormField<String> categoryDropdown(String? value, ValueChanged<Str
     DropdownButtonFormField<String>(
       initialValue: value,
       isExpanded: true, // narrow on phones (inventory filter): long names get an ellipsis instead of overflowing
-      decoration: InputDecoration(labelText: label, prefixIcon: const Icon(Icons.category)),
+      decoration: InputDecoration(labelText: label.tr, prefixIcon: const Icon(Icons.category)),
       items: [
         for (final c in categories)
           DropdownMenuItem(
@@ -270,7 +271,7 @@ DropdownButtonFormField<String> categoryDropdown(String? value, ValueChanged<Str
             child: Row(children: [
               Icon(categoryIcon(c), size: 18),
               const SizedBox(width: 8),
-              Flexible(child: Text(capitalize(c), overflow: TextOverflow.ellipsis)),
+              Flexible(child: Text(categoryName(c), overflow: TextOverflow.ellipsis)),
             ]),
           ),
       ],
@@ -281,7 +282,7 @@ DropdownButtonFormField<String> colorDropdown(String? value, ValueChanged<String
     DropdownButtonFormField<String>(
       initialValue: value,
       isExpanded: true,
-      decoration: const InputDecoration(labelText: 'Color', prefixIcon: Icon(Icons.palette)),
+      decoration: InputDecoration(labelText: 'Color'.tr, prefixIcon: const Icon(Icons.palette)),
       items: [
         for (final c in colors)
           DropdownMenuItem(
@@ -289,7 +290,7 @@ DropdownButtonFormField<String> colorDropdown(String? value, ValueChanged<String
             child: Row(children: [
               ColorDot(namedColor(c)),
               const SizedBox(width: 8),
-              Flexible(child: Text(capitalize(c), overflow: TextOverflow.ellipsis)),
+              Flexible(child: Text(colorName(c), overflow: TextOverflow.ellipsis)),
             ]),
           ),
       ],
@@ -301,7 +302,7 @@ DropdownButtonFormField<String> zoneDropdown(List<Zone> zones, String? value, Va
     DropdownButtonFormField<String>(
       initialValue: value,
       isExpanded: true,
-      decoration: InputDecoration(labelText: label, prefixIcon: const Icon(Icons.place)),
+      decoration: InputDecoration(labelText: label.tr, prefixIcon: const Icon(Icons.place)),
       items: [for (final z in zones) DropdownMenuItem(value: z.id, child: Text(z.label, overflow: TextOverflow.ellipsis))],
       onChanged: onChanged,
     );

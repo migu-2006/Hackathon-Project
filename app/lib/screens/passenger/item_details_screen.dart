@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../api.dart';
 import '../../app_state.dart';
+import '../../i18n.dart';
 import '../../models.dart';
 import '../../theme.dart';
 import '../../ui.dart';
@@ -24,7 +25,7 @@ class ItemDetailsScreen extends StatelessWidget {
     final description = [
       itemTitle(item.color, item.label.isEmpty || item.label == 'other' ? item.category : item.label),
       if (item.notes?.isNotEmpty == true) item.notes!,
-      'Unique details are kept private.',
+      'Unique details are kept private.'.tr,
     ].join('. ').replaceAll('..', '.');
 
     return Scaffold(
@@ -49,7 +50,7 @@ class ItemDetailsScreen extends StatelessWidget {
           ),
           if (data.photoHidden(item)) const _HiddenPhotoHint(),
           const SizedBox(height: 14),
-          Eyebrow('Found item · ${data.itemRef(item)}'),
+          Eyebrow('Found item · {ref}'.trf({'ref': data.itemRef(item)})),
           const SizedBox(height: 8),
           if (potential) ...[
             const PotentialMatchBadge(label: 'Potential match to your report'),
@@ -77,7 +78,7 @@ class ItemDetailsScreen extends StatelessWidget {
                 InfoRow(
                   icon: Icons.inventory_2_outlined,
                   label: 'Safely held by',
-                  value: '${airport.short} ${airport.team}',
+                  value: '{airport} {team}'.trf({'airport': airport.short, 'team': airport.team.tr}),
                 ),
                 if (item.zoneId != null)
                   Align(
@@ -89,7 +90,7 @@ class ItemDetailsScreen extends StatelessWidget {
                         ),
                       ),
                       icon: const Icon(Icons.map_outlined, size: 16),
-                      label: const Text('View on map', style: TextStyle(fontSize: 12.5)),
+                      label: Text('View on map'.tr, style: const TextStyle(fontSize: 12.5)),
                     ),
                   ),
               ],
@@ -129,7 +130,7 @@ class ItemDetailsScreen extends StatelessWidget {
           const SizedBox(height: 10),
           Center(
             child: Text(
-              'This is a possible match, not confirmed ownership.\nThe airport team reviews every claim.',
+              'This is a possible match, not confirmed ownership.\nThe airport team reviews every claim.'.tr,
               textAlign: TextAlign.center,
               style: TextStyle(color: p.muted, fontSize: 11.5),
             ),
@@ -195,14 +196,15 @@ class _VerifyClaimScreenState extends State<VerifyClaimScreen> {
     final send = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Send your claim?'),
-        content: const Text(
+        title: Text('Send your claim?'.tr),
+        content: Text(
           'You can claim this item only once. After you send it you can\'t change your description '
-          'or claim this item again, even if the airport team doesn\'t approve it.',
+                  'or claim this item again, even if the airport team doesn\'t approve it.'
+              .tr,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep editing')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Send')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Keep editing'.tr)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Send'.tr)),
         ],
       ),
     );
@@ -249,7 +251,7 @@ class _VerifyClaimScreenState extends State<VerifyClaimScreen> {
                     children: [
                       Text(itemTitle(item.color, item.category), style: const TextStyle(fontWeight: FontWeight.w600)),
                       Text(
-                        'Found item ${AppData.instance.itemRef(item)}',
+                        'Found item {ref}'.trf({'ref': AppData.instance.itemRef(item)}),
                         style: TextStyle(color: p.muted, fontSize: 12),
                       ),
                     ],
@@ -275,7 +277,7 @@ class _VerifyClaimScreenState extends State<VerifyClaimScreen> {
               controller: _answer,
               maxLines: 4,
               maxLength: 500,
-              decoration: const InputDecoration(hintText: 'E.g. a sticker, scratch, engraving, what was inside…'),
+              decoration: InputDecoration(hintText: 'E.g. a sticker, scratch, engraving, what was inside…'.tr),
             ),
             const NoteCard(
               icon: Icons.lock_outline,
@@ -308,13 +310,13 @@ class _HiddenPhotoHint extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            "Photo blurred to protect the owner. Search with a photo of your own item to see a clear picture if it's a match.",
+            "Photo blurred to protect the owner. Search with a photo of your own item to see a clear picture if it's a match.".tr,
             style: TextStyle(color: p.muted, fontSize: 12, height: 1.35),
           ),
         ),
         TextButton(
           onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PhotoSearchScreen())),
-          child: const Text('Search by photo', style: TextStyle(fontSize: 12.5)),
+          child: Text('Search by photo'.tr, style: const TextStyle(fontSize: 12.5)),
         ),
       ]),
     );

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../api.dart';
 import '../../app_state.dart';
+import '../../i18n.dart';
 import '../../models.dart';
 import '../../theme.dart';
 import '../../ui.dart';
@@ -44,7 +45,7 @@ class AttemptsScreenState extends State<AttemptsScreen> {
               title: 'Claim log',
               subtitle: groups.isEmpty
                   ? 'No claims yet. What passengers send for an item is logged here.'
-                  : '${groups.length} claim(s) sent',
+                  : trn(groups.length, '{n} claim sent', '{n} claims sent'),
             ),
             const SizedBox(height: 6),
             for (final g in groups) _card(p, g),
@@ -75,7 +76,7 @@ class AttemptsScreenState extends State<AttemptsScreen> {
                       '${AppData.instance.itemRef(item)} · ${item.location}',
                       style: TextStyle(color: p.muted, fontSize: 12),
                     ),
-                    Text('Passenger $userId', style: TextStyle(color: p.muted, fontSize: 12)),
+                    Text('Passenger {id}'.trf({'id': userId}), style: TextStyle(color: p.muted, fontSize: 12)),
                   ],
                 ),
               ),
@@ -83,7 +84,7 @@ class AttemptsScreenState extends State<AttemptsScreen> {
           ),
           if (item.secretDetail?.isNotEmpty == true) ...[
             const SizedBox(height: 8),
-            Text('Hidden detail: ${item.secretDetail}', style: TextStyle(color: p.warning, fontSize: 12.5)),
+            Text('Hidden detail: {detail}'.trf({'detail': item.secretDetail}), style: TextStyle(color: p.warning, fontSize: 12.5)),
           ],
           const SizedBox(height: 6),
           for (final a in attempts) _attemptRow(p, a),
@@ -112,7 +113,7 @@ class AttemptsScreenState extends State<AttemptsScreen> {
               children: [
                 Text('"${a['answer']}"', style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500)),
                 Text(
-                  '$label · ${fmtDayTime(DateTime.parse(a['timestamp']).toLocal())}',
+                  '${label.tr} · ${fmtDayTime(DateTime.parse(a['timestamp']).toLocal())}',
                   style: TextStyle(color: p.muted, fontSize: 11.5),
                 ),
               ],

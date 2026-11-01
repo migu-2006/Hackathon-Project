@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../app_state.dart';
+import '../i18n.dart';
 import '../theme.dart';
 import '../ui.dart';
 import '../widgets.dart';
@@ -14,15 +15,15 @@ Future<void> unlockDeveloperTools(BuildContext context) async {
   final key = await showDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Developer tools'),
+      title: Text('Developer tools'.tr),
       content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('Enter the developer key shown in the backend console when the server starts.'),
+        Text('Enter the developer key shown in the backend console when the server starts.'.tr),
         const SizedBox(height: 12),
-        TextField(controller: ctrl, autofocus: true, decoration: const InputDecoration(hintText: 'Developer key')),
+        TextField(controller: ctrl, autofocus: true, decoration: InputDecoration(hintText: 'Developer key'.tr)),
       ]),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-        FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Unlock')),
+        TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancel'.tr)),
+        FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: Text('Unlock'.tr)),
       ],
     ),
   );
@@ -31,7 +32,7 @@ Future<void> unlockDeveloperTools(BuildContext context) async {
     await Api.instance.devCheck(key);
     await AppData.instance.setDevKey(key);
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Developer tools unlocked.')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Developer tools unlocked.'.tr)));
     }
   } catch (e) {
     if (context.mounted) showError(context, e);
@@ -55,18 +56,18 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.warning_amber_rounded),
-        title: const Text('Reset all passenger data?'),
+        title: Text('Reset all passenger data?'.tr),
         content: Text(
-          'This permanently deletes every lost report, claim, verification attempt and notification '
-          'for all passengers, on every device.'
-          '${_includeItems ? '\n\nThe found-items inventory and its photos are deleted too.' : '\n\nFound items stay in the inventory and go back on the shelf.'}',
+          '${'This permanently deletes every lost report, claim, verification attempt and notification '
+              'for all passengers, on every device.'.tr}\n\n'
+          '${(_includeItems ? 'The found-items inventory and its photos are deleted too.' : 'Found items stay in the inventory and go back on the shelf.').tr}',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancel'.tr)),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE5484D)),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete everything'),
+            child: Text('Delete everything'.tr),
           ),
         ],
       ),
@@ -96,14 +97,14 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
   Widget build(BuildContext context) {
     final p = Palette.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Developer tools')),
+      appBar: AppBar(title: Text('Developer tools'.tr)),
       body: PageBody(children: [
         const PageHeader(title: 'Demo reset', subtitle: 'Start a demo from a clean slate.'),
         InfoRow(icon: Icons.dns_outlined, label: 'Server', value: Api.instance.baseUrl),
         const SizedBox(height: 8),
         SurfaceCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Deletes for all passengers', style: TextStyle(fontWeight: FontWeight.w600)),
+            Text('Deletes for all passengers'.tr, style: const TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             for (final t in ['Lost-item reports', 'Claims and pickup passes', 'Verification attempts and lockouts', 'Notifications'])
               Padding(
@@ -111,19 +112,19 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
                 child: Row(children: [
                   Icon(Icons.remove_circle_outline, size: 16, color: p.muted),
                   const SizedBox(width: 8),
-                  Expanded(child: Text(t, style: const TextStyle(fontSize: 13))),
+                  Expanded(child: Text(t.tr, style: const TextStyle(fontSize: 13))),
                 ]),
               ),
             const SizedBox(height: 4),
-            Text('Every open app clears its screens right away.', style: TextStyle(color: p.muted, fontSize: 12)),
+            Text('Every open app clears its screens right away.'.tr, style: TextStyle(color: p.muted, fontSize: 12)),
           ]),
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           value: _includeItems,
           onChanged: (v) => setState(() => _includeItems = v),
-          title: const Text('Also delete found items'),
-          subtitle: const Text('Empty the staff inventory and its photos too'),
+          title: Text('Also delete found items'.tr),
+          subtitle: Text('Empty the staff inventory and its photos too'.tr),
         ),
         const SizedBox(height: 8),
         FilledButton.icon(
@@ -132,7 +133,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
           icon: _busy
               ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
               : const Icon(Icons.delete_forever),
-          label: const Text('Reset passenger data'),
+          label: Text('Reset passenger data'.tr),
         ),
         if (_last != null) ...[
           const SizedBox(height: 12),
@@ -152,7 +153,7 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
               if (context.mounted) Navigator.pop(context);
             },
             icon: const Icon(Icons.lock_outline, size: 16),
-            label: const Text('Lock developer tools on this device'),
+            label: Text('Lock developer tools on this device'.tr),
           ),
         ),
       ]),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../api.dart';
 import '../../app_state.dart';
+import '../../i18n.dart';
 import '../../glass.dart';
 import '../../models.dart';
 import '../../theme.dart';
@@ -44,7 +45,7 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
         IconButton(
           style: glassIconStyle(context),
           icon: const Icon(Icons.add),
-          tooltip: 'New report',
+          tooltip: 'New report'.tr,
           onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReportScreen())),
         ),
       ]),
@@ -121,8 +122,8 @@ class _Tabs extends StatelessWidget {
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(color: p.border.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(10)),
       child: Row(children: [
-        tab('Active ($active)', !showClosed, () => onChanged(false)),
-        tab('Closed ($closed)', showClosed, () => onChanged(true)),
+        tab('Active ({n})'.trf({'n': active}), !showClosed, () => onChanged(false)),
+        tab('Closed ({n})'.trf({'n': closed}), showClosed, () => onChanged(true)),
       ]),
     );
   }
@@ -151,7 +152,7 @@ class _ReportCase extends StatelessWidget {
         stage == ReportStage.searching
             ? "We'll notify you as soon as a similar item is handed in"
             : matchItem != null
-                ? '${fmtDayTime(matchItem.timestamp)} · Not yet confirmed as yours'
+                ? '{date} · Not yet confirmed as yours'.trf({'date': fmtDayTime(matchItem.timestamp)})
                 : 'Not yet confirmed as yours',
         stage == ReportStage.searching ? _StepState.current : _StepState.done,
       ),
@@ -166,7 +167,9 @@ class _ReportCase extends StatelessWidget {
       ),
       _Step(
         stage == ReportStage.recovered ? 'Collected. Reunited!' : 'Choose how to get it back',
-        stage.index >= ReportStage.readyForPickup.index ? 'Pick up at the ${data.airport.desk}' : 'Available if ownership is confirmed.',
+        stage.index >= ReportStage.readyForPickup.index
+            ? 'Pick up at the {desk}'.trf({'desk': data.airport.desk.tr})
+            : 'Available if ownership is confirmed.',
         switch (stage) {
           ReportStage.readyForPickup => _StepState.current,
           ReportStage.recovered => _StepState.done,
@@ -202,7 +205,7 @@ class _ReportCase extends StatelessWidget {
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(itemTitle(report.color, report.category), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5)),
-                    Text('Report ${data.reportRef(report)} · ${fmtDay(report.timestamp)}', style: TextStyle(color: p.muted, fontSize: 12)),
+                    Text('Report {ref} · {date}'.trf({'ref': data.reportRef(report), 'date': fmtDay(report.timestamp)}), style: TextStyle(color: p.muted, fontSize: 12)),
                     const SizedBox(height: 4),
                     StageBadge(stage),
                   ]),
@@ -221,7 +224,7 @@ class _ReportCase extends StatelessWidget {
               child: Row(children: [
                 Icon(Icons.update, size: 13, color: p.muted),
                 const SizedBox(width: 6),
-                Text('Last updated ${fmtUpdated(updated)}', style: TextStyle(color: p.muted, fontSize: 11)),
+                Text('Last updated {time}'.trf({'time': fmtUpdated(updated)}), style: TextStyle(color: p.muted, fontSize: 11)),
               ]),
             ),
           ]),
@@ -239,12 +242,12 @@ class _ReportCase extends StatelessWidget {
         else if (stage == ReportStage.underReview && claim != null)
           OutlinedButton(
             onPressed: () => _showClaimDetails(context, claim),
-            child: const Row(children: [Expanded(child: Text('View private claim details')), Icon(Icons.north_east, size: 18)]),
+            child: Row(children: [Expanded(child: Text('View private claim details'.tr)), const Icon(Icons.north_east, size: 18)]),
           )
         else if (stage == ReportStage.actionNeeded)
           OutlinedButton(
             onPressed: () => _openMatch(context, claim, matches),
-            child: const Row(children: [Expanded(child: Text('Review potential match')), Icon(Icons.north_east, size: 18)]),
+            child: Row(children: [Expanded(child: Text('Review potential match'.tr)), const Icon(Icons.north_east, size: 18)]),
           ),
       ]),
     );
@@ -269,13 +272,13 @@ class _ReportCase extends StatelessWidget {
       builder: (ctx) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Private claim details', style: Theme.of(ctx).textTheme.titleMedium),
+          Text('Private claim details'.tr, style: Theme.of(ctx).textTheme.titleMedium),
           const SizedBox(height: 12),
           InfoRow(icon: Icons.receipt_long_outlined, label: 'Claim', value: claim.id.toUpperCase()),
           InfoRow(icon: Icons.schedule, label: 'Sent', value: fmtDayTime(claim.timestamp)),
           InfoRow(icon: Icons.help_outline, label: 'Security question', value: claim.question),
           const SizedBox(height: 8),
-          Text('Your answer is only visible to the airport team.', style: TextStyle(color: p.muted, fontSize: 12)),
+          Text('Your answer is only visible to the airport team.'.tr, style: TextStyle(color: p.muted, fontSize: 12)),
         ]),
       ),
     );
@@ -324,14 +327,14 @@ class _StepTile extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.only(bottom: 14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(step.title,
+              Text(step.title.tr,
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
                     color: step.state == _StepState.locked ? p.muted : p.text,
                   )),
               const SizedBox(height: 2),
-              Text(step.subtitle, style: TextStyle(color: p.muted, fontSize: 11.5)),
+              Text(step.subtitle.tr, style: TextStyle(color: p.muted, fontSize: 11.5)),
             ]),
           ),
         ),
@@ -371,9 +374,9 @@ class PickupPassScreen extends StatelessWidget {
     final p = Palette.of(context);
     final data = AppData.instance;
     final steps = [
-      ('Show this QR to staff', 'At the ${data.airport.desk}.'),
+      ('Show this QR to staff', 'At the {desk}.'.trf({'desk': data.airport.desk.tr})),
       ('Answer the security question', 'Staff will ask you in person.'),
-      ('Collect your ${report.category}', 'Only after staff confirm your identity.'),
+      ('Collect your {item}'.trf({'item': categoryName(report.category).toLowerCase()}), 'Only after staff confirm your identity.'),
     ];
     return Scaffold(
       appBar: rAppBar(context, 'Pickup pass'),
@@ -399,8 +402,8 @@ class PickupPassScreen extends StatelessWidget {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(itemTitle(item?.color ?? report.color, report.category),
                         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5)),
-                    Text('Report ${data.reportRef(report)} · ${fmtDay(report.timestamp)}', style: TextStyle(color: p.muted, fontSize: 12)),
-                    if (item != null) Text('Found item ${data.itemRef(item!)}', style: TextStyle(color: p.muted, fontSize: 12)),
+                    Text('Report {ref} · {date}'.trf({'ref': data.reportRef(report), 'date': fmtDay(report.timestamp)}), style: TextStyle(color: p.muted, fontSize: 12)),
+                    if (item != null) Text('Found item {ref}'.trf({'ref': data.itemRef(item!)}), style: TextStyle(color: p.muted, fontSize: 12)),
                   ]),
                 ),
               ]),
@@ -430,7 +433,7 @@ class PickupPassScreen extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 2, 16, 14),
-              child: Text('If the QR can\'t be scanned, staff can type this code · Claim ${claim.id.toUpperCase()}',
+              child: Text('If the QR can\'t be scanned, staff can type this code · Claim {id}'.trf({'id': claim.id.toUpperCase()}),
                   textAlign: TextAlign.center, style: TextStyle(color: p.muted, fontSize: 11)),
             ),
           ]),
@@ -443,7 +446,7 @@ class PickupPassScreen extends StatelessWidget {
             InfoRow(
               icon: Icons.place_outlined,
               label: 'Collection location',
-              value: '${data.airportByCode(report.airport).short} · ${data.airportByCode(report.airport).desk}',
+              value: '${data.airportByCode(report.airport).short} · ${data.airportByCode(report.airport).desk.tr}',
             ),
             if (item?.zoneId != null && !item!.locationHidden)
               TextButton.icon(
@@ -451,14 +454,14 @@ class PickupPassScreen extends StatelessWidget {
                   builder: (_) => AirportMapScreen(airport: item!.airport, focusZoneId: item!.zoneId),
                 )),
                 icon: const Icon(Icons.map_outlined, size: 16),
-                label: const Text('View on map', style: TextStyle(fontSize: 12.5)),
+                label: Text('View on map'.tr, style: const TextStyle(fontSize: 12.5)),
               ),
           ]),
         ),
         SurfaceCard(
           color: p.tint,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('At pickup · identity check still required', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+            Text('At pickup · identity check still required'.tr, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
             const SizedBox(height: 10),
             for (var i = 0; i < steps.length; i++)
               Padding(
@@ -474,8 +477,8 @@ class PickupPassScreen extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(steps[i].$1, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
-                      Text(steps[i].$2, style: TextStyle(color: p.muted, fontSize: 11.5)),
+                      Text(steps[i].$1.tr, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
+                      Text(steps[i].$2.tr, style: TextStyle(color: p.muted, fontSize: 11.5)),
                     ]),
                   ),
                 ]),

@@ -7,6 +7,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../api.dart';
 import '../../app_state.dart';
+import '../../i18n.dart';
 import '../../models.dart';
 import '../../theme.dart';
 import 'found_items_screen.dart';
@@ -103,7 +104,7 @@ class _AppShellState extends State<AppShell> {
         ),
       ]),
       action: SnackBarAction(
-        label: 'VIEW',
+        label: 'VIEW'.tr,
         textColor: Colors.white,
         onPressed: () => _goTo(ShellTab.reports, reset: true),
       ),
@@ -120,9 +121,9 @@ class _AppShellState extends State<AppShell> {
     });
     await AppData.instance.clearPassengerData();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       behavior: SnackBarBehavior.floating,
-      content: Text('Demo data was reset. Everything starts fresh.'),
+      content: Text('Demo data was reset. Everything starts fresh.'.tr),
     ));
   }
 
@@ -174,14 +175,14 @@ class _AppShellState extends State<AppShell> {
             selectedIndex: _tab.index,
             onDestinationSelected: (i) => _goTo(ShellTab.values[i]),
             destinations: [
-              const NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
-              const NavigationDestination(icon: Icon(Icons.search), label: 'Find items'),
+              NavigationDestination(icon: const Icon(Icons.home_outlined), selectedIcon: const Icon(Icons.home), label: 'Home'.tr),
+              NavigationDestination(icon: const Icon(Icons.search), label: 'Find items'.tr),
               NavigationDestination(
                 icon: Badge(isLabelVisible: unread > 0, label: Text('$unread'), child: const Icon(Icons.assignment_outlined)),
                 selectedIcon: const Icon(Icons.assignment),
-                label: 'My reports',
+                label: 'My reports'.tr,
               ),
-              const NavigationDestination(icon: Icon(Icons.help_outline), selectedIcon: Icon(Icons.help), label: 'Help'),
+              NavigationDestination(icon: const Icon(Icons.help_outline), selectedIcon: const Icon(Icons.help), label: 'Help'.tr),
             ],
           ),
         ),

@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../api.dart';
 import '../../app_state.dart';
+import '../../i18n.dart';
 import '../../glass.dart';
 import '../../models.dart';
 import '../../theme.dart';
 import '../../ui.dart';
-import '../../widgets.dart';
 import 'item_details_screen.dart';
 import 'map_screen.dart';
 import 'photo_search_screen.dart';
@@ -66,7 +66,10 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
         if (d.isBefore(_dates!.start) || d.isAfter(_dates!.end)) return false;
       }
       if (q.isNotEmpty) {
-        final hay = '${i.category} ${i.label} ${i.color} ${i.text} ${i.notes ?? ''} ${data.zoneLabel(i.location)}'.toLowerCase();
+        // English and app-language names, so "rucsac" or "mochila" finds backpacks too.
+        final hay = '${i.category} ${categoryName(i.category)} ${i.label} ${i.color} ${i.color.isEmpty ? '' : colorName(i.color)} '
+                '${i.text} ${i.notes ?? ''} ${data.zoneLabel(i.location)}'
+            .toLowerCase();
         if (!q.split(RegExp(r'\s+')).every(hay.contains)) return false;
       }
       return true;
@@ -92,7 +95,7 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
     final c = await pickFromList<String>(
       context,
       'Category',
-      [('', 'All categories'), for (final c in categories) (c, capitalize(c))],
+      [('', 'All categories'), for (final c in categories) (c, categoryName(c))],
       selected: _category ?? '',
     );
     if (c != null) setState(() => _category = c.isEmpty ? null : c);
@@ -119,7 +122,7 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
         IconButton(
           style: glassIconStyle(context),
           icon: const Icon(Icons.map_outlined),
-          tooltip: 'Terminal map',
+          tooltip: 'Terminal map'.tr,
           onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AirportMapScreen())),
         ),
       ]),
@@ -134,11 +137,11 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
               controller: _search,
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
-                hintText: 'Search by item or category',
+                hintText: 'Search by item or category'.tr,
                 prefixIcon: const Icon(Icons.search, size: 20),
                 suffixIcon: IconButton(
                   icon: Icon(Icons.photo_camera_outlined, color: p.primary),
-                  tooltip: 'Search by photo',
+                  tooltip: 'Search by photo'.tr,
                   onPressed: _photoSearch,
                 ),
               ),
@@ -152,7 +155,7 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
                 onTap: _pickDates,
               ),
               FilterPill(
-                label: _activeFilters == 0 ? 'Filters' : 'Filters · $_activeFilters',
+                label: _activeFilters == 0 ? 'Filters' : 'Filters · {n}'.trf({'n': _activeFilters}),
                 trailingIcon: _activeFilters == 0 ? Icons.tune : Icons.close,
                 active: _activeFilters > 0,
                 onTap: _activeFilters == 0 ? _pickCategory : _clearFilters,
@@ -160,15 +163,15 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
             ]),
             const SizedBox(height: 8),
             Wrap(spacing: 8, children: [
-              FilterPill(label: _category == null ? 'All categories' : capitalize(_category!), active: _category != null, onTap: _pickCategory),
+              FilterPill(label: _category == null ? 'All categories' : categoryName(_category!), active: _category != null, onTap: _pickCategory),
             ]),
             const SizedBox(height: 10),
             SectionTitle(
-              snap.hasData ? '${items.length} items found' : 'Loading items…',
+              snap.hasData ? trn(items.length, '{n} item found', '{n} items found') : 'Loading items…',
               trailingWidget: GestureDetector(
                 onTap: () => setState(() => _newestFirst = !_newestFirst),
                 child: Row(children: [
-                  Text(_newestFirst ? 'Newest first ' : 'Oldest first ', style: TextStyle(color: p.muted, fontSize: 12)),
+                  Text('${(_newestFirst ? 'Newest first' : 'Oldest first').tr} ', style: TextStyle(color: p.muted, fontSize: 12)),
                   Icon(Icons.sort, size: 16, color: p.muted),
                 ]),
               ),
@@ -184,10 +187,10 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
                 child: Row(children: [
                   Icon(Icons.visibility_off_outlined, size: 18, color: p.primary),
                   const SizedBox(width: 10),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Photos are blurred to protect owners. Search with a photo of your item to see clear pictures of similar ones.',
-                      style: TextStyle(fontSize: 12.5, height: 1.35),
+                      'Photos are blurred to protect owners. Search with a photo of your item to see clear pictures of similar ones.'.tr,
+                      style: const TextStyle(fontSize: 12.5, height: 1.35),
                     ),
                   ),
                   Icon(Icons.photo_camera_outlined, size: 18, color: p.primary),
@@ -210,7 +213,7 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Identifying details are hidden. A potential match does not confirm ownership.',
+                  'Identifying details are hidden. A potential match does not confirm ownership.'.tr,
                   style: TextStyle(color: p.muted, fontSize: 11.5),
                 ),
               ),

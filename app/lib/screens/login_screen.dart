@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../app_state.dart';
+import '../i18n.dart';
 import '../theme.dart';
 import '../ui.dart';
+import 'account.dart';
 import 'passenger/help_screen.dart';
 import 'verify_email_screen.dart';
 
@@ -57,7 +59,9 @@ class _LoginScreenState extends State<LoginScreen> {
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
-      if (mounted) setState(() => _error = 'Can\'t reach the server at ${Api.instance.baseUrl}. Check the address below.');
+      if (mounted) {
+        setState(() => _error = 'Can\'t reach the server at {url}. Check the address below.'.trf({'url': Api.instance.baseUrl}));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -90,19 +94,19 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 28, color: p.text, letterSpacing: -0.8)),
                     ]),
                     const SizedBox(height: 4),
-                    Text('Airport Lost & Found', textAlign: TextAlign.center, style: TextStyle(color: p.muted)),
+                    Text('Airport Lost & Found'.tr, textAlign: TextAlign.center, style: TextStyle(color: p.muted)),
                     const SizedBox(height: 36),
-                    Text(title, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: p.text)),
+                    Text(title.tr, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: p.text)),
                     const SizedBox(height: 4),
-                    Text(subtitle, style: TextStyle(color: p.muted)),
+                    Text(subtitle.tr, style: TextStyle(color: p.muted)),
                     const SizedBox(height: 20),
                     if (_register) ...[
                       TextFormField(
                         controller: _name,
                         textCapitalization: TextCapitalization.words,
                         autofillHints: const [AutofillHints.name],
-                        decoration: const InputDecoration(labelText: 'Full name', prefixIcon: Icon(Icons.person_outline)),
-                        validator: (v) => (v ?? '').trim().isEmpty ? 'Enter your name' : null,
+                        decoration: InputDecoration(labelText: 'Full name'.tr, prefixIcon: const Icon(Icons.person_outline)),
+                        validator: (v) => (v ?? '').trim().isEmpty ? 'Enter your name'.tr : null,
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -110,8 +114,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       controller: _email,
                       keyboardType: TextInputType.emailAddress,
                       autofillHints: const [AutofillHints.email],
-                      decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.mail_outline)),
-                      validator: (v) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch((v ?? '').trim()) ? null : 'Enter a valid email',
+                      decoration: InputDecoration(labelText: 'Email'.tr, prefixIcon: const Icon(Icons.mail_outline)),
+                      validator: (v) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch((v ?? '').trim()) ? null : 'Enter a valid email'.tr,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -120,17 +124,17 @@ class _LoginScreenState extends State<LoginScreen> {
                       autofillHints: [_register ? AutofillHints.newPassword : AutofillHints.password],
                       onFieldSubmitted: (_) => _submit(),
                       decoration: InputDecoration(
-                        labelText: 'Password',
+                        labelText: 'Password'.tr,
                         prefixIcon: const Icon(Icons.lock_outline),
-                        helperText: _register ? 'At least 6 characters' : null,
+                        helperText: _register ? 'At least 6 characters'.tr : null,
                         suffixIcon: IconButton(
-                          tooltip: _hidden ? 'Show password' : 'Hide password',
+                          tooltip: (_hidden ? 'Show password' : 'Hide password').tr,
                           icon: Icon(_hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                           onPressed: () => setState(() => _hidden = !_hidden),
                         ),
                       ),
                       validator: (v) => (v ?? '').length < (_register ? 6 : 1)
-                          ? (_register ? 'At least 6 characters' : 'Enter your password')
+                          ? (_register ? 'At least 6 characters' : 'Enter your password').tr
                           : null,
                     ),
                     if (_error != null) ...[
@@ -163,19 +167,24 @@ class _LoginScreenState extends State<LoginScreen> {
                         _register = !_register;
                         _error = null;
                       }),
-                      child: Text(_register ? 'Already have an account? Sign in' : 'New here? Create an account'),
+                      child: Text((_register ? 'Already have an account? Sign in' : 'New here? Create an account').tr),
                     ),
                     if (!_register)
-                      Text('Airport staff: use the account your administrator gave you.',
+                      Text('Airport staff: use the account your administrator gave you.'.tr,
                           textAlign: TextAlign.center, style: TextStyle(color: p.muted, fontSize: 12)),
                     const SizedBox(height: 24),
+                    TextButton.icon(
+                      onPressed: () => pickLanguage(context),
+                      icon: Icon(Icons.translate, size: 16, color: p.muted),
+                      label: Text(I18n.current.nativeName, style: TextStyle(color: p.muted, fontSize: 12)),
+                    ),
                     TextButton.icon(
                       onPressed: () async {
                         await editServerAddress(context);
                         setState(() => _error = null);
                       },
                       icon: Icon(Icons.dns_outlined, size: 16, color: p.muted),
-                      label: Text('Server · ${Api.instance.baseUrl}', style: TextStyle(color: p.muted, fontSize: 12)),
+                      label: Text('Server · {url}'.trf({'url': Api.instance.baseUrl}), style: TextStyle(color: p.muted, fontSize: 12)),
                     ),
                   ]),
                 ),

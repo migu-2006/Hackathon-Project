@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import '../api.dart';
 import '../app_state.dart';
 import '../glass.dart';
+import '../i18n.dart';
 import '../models.dart';
 import '../theme.dart';
+import '../ui.dart';
 import '../widgets.dart';
+import 'terms_screen.dart';
 
 /// Round avatar with the account's initials, coloured by role.
 class UserAvatar extends StatelessWidget {
@@ -35,36 +38,61 @@ class AccountButton extends StatelessWidget {
     final user = AppData.instance.user;
     if (user == null) return const SizedBox.shrink();
     return PopupMenuButton<String>(
-      tooltip: 'Account',
+      tooltip: 'Account'.tr,
       style: glassIconStyle(context),
       position: PopupMenuPosition.under,
       icon: UserAvatar(user, radius: 15),
-      onSelected: (v) => v == 'password' ? changePasswordDialog(context) : confirmSignOut(context),
+      onSelected: (v) => switch (v) {
+        'password' => changePasswordDialog(context),
+        'language' => pickLanguage(context),
+        'terms' => Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => const TermsScreen())),
+        _ => confirmSignOut(context),
+      },
       itemBuilder: (_) => [
         PopupMenuItem(
           enabled: false,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(user.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-            Text('${user.email} · ${user.roleLabel}', style: const TextStyle(fontSize: 12)),
+            Text('${user.email} · ${user.roleLabel.tr}', style: const TextStyle(fontSize: 12)),
           ]),
         ),
         const PopupMenuDivider(),
-        const PopupMenuItem(value: 'password', child: ListTile(leading: Icon(Icons.key_outlined), title: Text('Change password'))),
-        const PopupMenuItem(value: 'signout', child: ListTile(leading: Icon(Icons.logout), title: Text('Sign out'))),
+        PopupMenuItem(
+          value: 'language',
+          child: ListTile(
+            leading: const Icon(Icons.translate),
+            title: Text('Language'.tr),
+            subtitle: Text(I18n.current.nativeName),
+          ),
+        ),
+        PopupMenuItem(value: 'password', child: ListTile(leading: const Icon(Icons.key_outlined), title: Text('Change password'.tr))),
+        PopupMenuItem(value: 'terms', child: ListTile(leading: const Icon(Icons.description_outlined), title: Text('Terms & conditions'.tr))),
+        PopupMenuItem(value: 'signout', child: ListTile(leading: const Icon(Icons.logout), title: Text('Sign out'.tr))),
       ],
     );
   }
+}
+
+/// Language for the whole app, saved on this device. Open screens switch right away.
+Future<void> pickLanguage(BuildContext context) async {
+  final lang = await pickFromList<AppLanguage>(
+    context,
+    'Language',
+    [for (final l in AppLanguage.values) (l, l.nativeName)],
+    selected: I18n.current,
+  );
+  if (lang != null) await I18n.set(lang);
 }
 
 Future<void> confirmSignOut(BuildContext context) async {
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Sign out?'),
-      content: const Text('You can sign in again with your email and password.'),
+      title: Text('Sign out?'.tr),
+      content: Text('You can sign in again with your email and password.'.tr),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Sign out')),
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancel'.tr)),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Sign out'.tr)),
       ],
     ),
   );
@@ -78,27 +106,27 @@ Future<void> changePasswordDialog(BuildContext context) async {
   final done = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Change password'),
+      title: Text('Change password'.tr),
       content: Form(
         key: form,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           TextFormField(
             controller: current,
             obscureText: true,
-            decoration: const InputDecoration(labelText: 'Current password'),
-            validator: (v) => (v ?? '').isEmpty ? 'Required' : null,
+            decoration: InputDecoration(labelText: 'Current password'.tr),
+            validator: (v) => (v ?? '').isEmpty ? 'Required'.tr : null,
           ),
           const SizedBox(height: 12),
           TextFormField(
             controller: next,
             obscureText: true,
-            decoration: const InputDecoration(labelText: 'New password', helperText: 'At least 6 characters'),
-            validator: (v) => (v ?? '').length < 6 ? 'At least 6 characters' : null,
+            decoration: InputDecoration(labelText: 'New password'.tr, helperText: 'At least 6 characters'.tr),
+            validator: (v) => (v ?? '').length < 6 ? 'At least 6 characters'.tr : null,
           ),
         ]),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancel'.tr)),
         FilledButton(
           onPressed: () async {
             if (!form.currentState!.validate()) return;
@@ -109,12 +137,12 @@ Future<void> changePasswordDialog(BuildContext context) async {
               if (ctx.mounted) showError(ctx, e);
             }
           },
-          child: const Text('Save'),
+          child: Text('Save'.tr),
         ),
       ],
     ),
   );
   if (done == true && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password changed.')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Password changed.'.tr)));
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
+import '../../i18n.dart';
 import '../../glass.dart';
 import '../../models.dart';
 import '../../theme.dart';
@@ -27,7 +28,7 @@ class HomeScreen extends StatelessWidget {
           IconButton(
             style: glassIconStyle(context),
             icon: Icon(Icons.account_circle_outlined, color: p.primary),
-            tooltip: 'Account & settings',
+            tooltip: 'Account & settings'.tr,
             onPressed: () => showAccountSheet(context),
           ),
           const SizedBox(width: 8),
@@ -71,7 +72,7 @@ class HomeScreen extends StatelessWidget {
               NoteCard(icon: Icons.cloud_off, title: "Can't reach the airport service", body: '${data.error}')
             else if (data.latestReport == null)
               SurfaceCard(
-                child: Text('No reports yet. Lost something? Report it and we\'ll keep looking for you.',
+                child: Text('No reports yet. Lost something? Report it and we\'ll keep looking for you.'.tr,
                     style: TextStyle(color: p.muted, fontSize: 13)),
               )
             else
@@ -129,7 +130,7 @@ class _AirportCard extends StatelessWidget {
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     Icon(Icons.map_outlined, size: 13, color: p.primary),
                     const SizedBox(width: 4),
-                    Text('Open map', style: TextStyle(fontSize: 11, color: p.primary, fontWeight: FontWeight.w600)),
+                    Text('Open map'.tr, style: TextStyle(fontSize: 11, color: p.primary, fontWeight: FontWeight.w600)),
                   ]),
                 ),
               ),
@@ -146,7 +147,7 @@ class _AirportCard extends StatelessWidget {
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(airport.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                  Text('All terminals · ${airport.country}', style: TextStyle(color: p.muted, fontSize: 11.5)),
+                  Text('All terminals · {country}'.trf({'country': airport.country.tr}), style: TextStyle(color: p.muted, fontSize: 11.5)),
                 ]),
               ),
               Icon(Icons.keyboard_arrow_down, color: p.muted),
@@ -186,9 +187,9 @@ class _ActionCard extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, style: TextStyle(color: fg, fontWeight: FontWeight.w600, fontSize: 14.5)),
+            Text(title.tr, style: TextStyle(color: fg, fontWeight: FontWeight.w600, fontSize: 14.5)),
             const SizedBox(height: 2),
-            Text(subtitle, style: TextStyle(color: sub, fontSize: 12)),
+            Text(subtitle.tr, style: TextStyle(color: sub, fontSize: 12)),
           ]),
         ),
         Icon(Icons.north_east, color: primary ? Colors.white : p.primary, size: 18),
@@ -226,7 +227,7 @@ class LatestReportCard extends StatelessWidget {
         Row(children: [
           Icon(icon, size: 15, color: p.primary),
           const SizedBox(width: 8),
-          Expanded(child: Text(message, style: TextStyle(color: p.muted, fontSize: 12))),
+          Expanded(child: Text(message.tr, style: TextStyle(color: p.muted, fontSize: 12))),
           Icon(Icons.arrow_forward, size: 18, color: p.primary),
         ]),
       ]),
