@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'i18n.dart';
+
 /// How a point of interest looks on the map: its icon, colour and a readable label.
 class PoiStyle {
   final IconData icon;
@@ -95,7 +97,6 @@ int poiPriority(String type, bool named) {
 // ---------------------------------------------------------------- opening hours
 
 const _dayKeys = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
-const _dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 class _Rule {
   final Set<int> days; // 0 = Monday
@@ -116,7 +117,7 @@ class OpeningHours {
       part = part.trim();
       if (part.isEmpty) continue;
       if (part == '24/7') {
-        rules.add(_Rule({0, 1, 2, 3, 4, 5, 6}, [(0, 1440)], 'Open 24 hours, every day'));
+        rules.add(_Rule({0, 1, 2, 3, 4, 5, 6}, [(0, 1440)], 'Open 24 hours, every day'.tr));
         continue;
       }
       final m = RegExp(r'^((?:Mo|Tu|We|Th|Fr|Sa|Su)(?:-(?:Mo|Tu|We|Th|Fr|Sa|Su))?(?:,(?:Mo|Tu|We|Th|Fr|Sa|Su)(?:-(?:Mo|Tu|We|Th|Fr|Sa|Su))?)*)?\s*(.+)$')
@@ -167,40 +168,40 @@ class OpeningHours {
     final today = _spansOn(day);
     final yesterday = _spansOn((day + 6) % 7);
     for (final (a, b) in today) {
-      if (b - a >= 1439 || (a == 0 && b >= 1439)) return (true, 'Open 24 hours');
+      if (b - a >= 1439 || (a == 0 && b >= 1439)) return (true, 'Open 24 hours'.tr);
       final end = b <= a ? b + 1440 : b;
-      if (mins >= a && mins < end) return (true, 'Open now · closes ${_hhmm(b)}');
+      if (mins >= a && mins < end) return (true, 'Open now · closes {time}'.trf({'time': _hhmm(b)}));
     }
     for (final (a, b) in yesterday) {
-      if (b <= a && mins < b) return (true, 'Open now · closes ${_hhmm(b)}');
+      if (b <= a && mins < b) return (true, 'Open now · closes {time}'.trf({'time': _hhmm(b)}));
     }
     final later = today.where((s) => s.$1 > mins).map((s) => s.$1).toList()..sort();
-    if (later.isNotEmpty) return (false, 'Closed now · opens ${_hhmm(later.first)}');
+    if (later.isNotEmpty) return (false, 'Closed now · opens {time}'.trf({'time': _hhmm(later.first)}));
     for (var i = 1; i <= 7; i++) {
       final spans = _spansOn((day + i) % 7);
       if (spans.isNotEmpty) {
-        final when = i == 1 ? 'tomorrow' : _dayNames[(day + i) % 7];
-        return (false, 'Closed now · opens $when ${_hhmm(spans.first.$1)}');
+        final when = i == 1 ? 'tomorrow'.tr : weekdayShort((day + i) % 7);
+        return (false, 'Closed now · opens {day} {time}'.trf({'day': when, 'time': _hhmm(spans.first.$1)}));
       }
     }
-    return (false, 'Closed');
+    return (false, 'Closed'.tr);
   }
 
   static String _hhmm(int m) => '${(m ~/ 60 % 24).toString().padLeft(2, '0')}:${(m % 60).toString().padLeft(2, '0')}';
 
   static String _describeSpans(List<(int, int)> spans) {
-    if (spans.isEmpty) return 'Closed';
-    if (spans.length == 1 && spans.first.$1 == 0 && spans.first.$2 >= 1439) return 'Open 24 hours';
+    if (spans.isEmpty) return 'Closed'.tr;
+    if (spans.length == 1 && spans.first.$1 == 0 && spans.first.$2 >= 1439) return 'Open 24 hours'.tr;
     return spans.map((s) => '${_hhmm(s.$1)}–${s.$2 >= 1440 ? '24:00' : _hhmm(s.$2)}').join(', ');
   }
 
   static String _describeDays(Set<int> days) {
-    if (days.length == 7) return 'Every day';
+    if (days.length == 7) return 'Every day'.tr;
     final sorted = days.toList()..sort();
     if (sorted.length >= 3 && sorted.last - sorted.first == sorted.length - 1) {
-      return '${_dayNames[sorted.first]}–${_dayNames[sorted.last]}';
+      return '${weekdayShort(sorted.first)}–${weekdayShort(sorted.last)}';
     }
-    return sorted.map((d) => _dayNames[d]).join(', ');
+    return sorted.map(weekdayShort).join(', ');
   }
 }
 

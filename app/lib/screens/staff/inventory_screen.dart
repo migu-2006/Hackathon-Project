@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../api.dart';
 import '../../app_state.dart';
+import '../../i18n.dart';
 import '../../models.dart';
 import '../../ui.dart';
 import '../../widgets.dart';
@@ -38,9 +39,9 @@ class InventoryScreenState extends State<InventoryScreen> {
         child: Row(children: [
           SegmentedButton<String>(
             showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: 'available', label: Text('Available')),
-              ButtonSegment(value: 'claimed', label: Text('Recovered')),
+            segments: [
+              ButtonSegment(value: 'available', label: Text('Available'.tr)),
+              ButtonSegment(value: 'claimed', label: Text('Recovered'.tr)),
             ],
             selected: {_status},
             onSelectionChanged: (s) {

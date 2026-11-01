@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../api.dart';
 import '../../app_state.dart';
+import '../../i18n.dart';
 import '../../theme.dart';
 import '../../ui.dart';
 import '../../widgets.dart';
@@ -73,8 +74,9 @@ class _ReportScreenState extends State<ReportScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         behavior: SnackBarBehavior.floating,
         content: Text(r.matches.isEmpty
-            ? "Report submitted. We'll notify you when there's a potential match."
-            : 'Good news: ${r.matches.length} potential match(es) already found!'),
+            ? "Report submitted. We'll notify you when there's a potential match.".tr
+            : trn(r.matches.length, 'Good news: {n} potential match already found!',
+                'Good news: {n} potential matches already found!')),
       ));
       Navigator.of(context).pop();
     } catch (e) {
@@ -98,7 +100,7 @@ class _ReportScreenState extends State<ReportScreen> {
         ),
         Row(children: [
           Expanded(child: Eyebrow('Item & journey', color: p.primary)),
-          Text('Category required', style: TextStyle(color: p.muted, fontSize: 11)),
+          Text('Category required'.tr, style: TextStyle(color: p.muted, fontSize: 11)),
         ]),
         const SizedBox(height: 10),
         SelectField(
@@ -126,14 +128,14 @@ class _ReportScreenState extends State<ReportScreen> {
           hint: 'Select a category',
           onTap: _pickCategory,
         ),
-        const Text('Item description', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500)),
+        Text('Item description'.tr, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500)),
         const SizedBox(height: 6),
         TextField(
           controller: _description,
           maxLines: 4,
           maxLength: 500,
-          decoration: const InputDecoration(
-            hintText: 'Colour, brand, size, anything distinctive.\nE.g. Black over-ear wireless headphones.',
+          decoration: InputDecoration(
+            hintText: 'Colour, brand, size, anything distinctive.\nE.g. Black over-ear wireless headphones.'.tr,
           ),
         ),
         _PhotoRow(photo: _photo, onChanged: (f) => setState(() => _photo = f)),
@@ -147,7 +149,7 @@ class _ReportScreenState extends State<ReportScreen> {
         PrimaryButton(label: 'Submit lost-item report', busy: _saving, onPressed: _submit),
         const SizedBox(height: 10),
         Center(
-          child: Text("We'll notify you when there's a potential match.", style: TextStyle(color: p.muted, fontSize: 12)),
+          child: Text("We'll notify you when there's a potential match.".tr, style: TextStyle(color: p.muted, fontSize: 12)),
         ),
       ]),
     );
@@ -180,9 +182,9 @@ class _PhotoRow extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(photo == null ? 'Add a photo (optional)' : 'Photo added',
+            Text((photo == null ? 'Add a photo (optional)' : 'Photo added').tr,
                 style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-            Text('An older picture of the item improves matching.', style: TextStyle(color: p.muted, fontSize: 11.5)),
+            Text('An older picture of the item improves matching.'.tr, style: TextStyle(color: p.muted, fontSize: 11.5)),
           ]),
         ),
         if (photo != null) IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () => onChanged(null)),

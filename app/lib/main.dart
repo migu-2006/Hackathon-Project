@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
 import 'app_state.dart';
+import 'i18n.dart';
 import 'models.dart';
 import 'screens/admin/admin_home.dart';
 import 'screens/login_screen.dart';
@@ -18,6 +20,7 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
   final savedUrl = prefs.getString('baseUrl');
   if (savedUrl != null) Api.instance.baseUrl = savedUrl;
+  I18n.load(prefs);
   await AppData.instance.loadPrefs(prefs); // remembered session, if any
   unawaited(AppData.instance.verifySession());
   runApp(const LostFoundApp());
@@ -70,14 +73,18 @@ class LostFoundApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: AppData.instance.themeMode,
-      builder: (_, mode, _) => MaterialApp(
+    return ListenableBuilder(
+      listenable: Listenable.merge([AppData.instance.themeMode, I18n.language]),
+      builder: (_, _) => MaterialApp(
         title: 'SkyFindr · Airport Lost & Found',
         debugShowCheckedModeBanner: false,
         theme: buildTheme(Brightness.light),
         darkTheme: buildTheme(Brightness.dark),
-        themeMode: mode,
+        themeMode: AppData.instance.themeMode.value,
+        // Language picked in Account & settings; Flutter's own widgets (date pickers...) follow it.
+        locale: I18n.current.locale,
+        supportedLocales: [for (final l in AppLanguage.values) l.locale],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         navigatorKey: rootNavigatorKey,
         home: const RootGate(),
         builder: (context, child) => splash ? StartupSplash(child: child!) : child!,

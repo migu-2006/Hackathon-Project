@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
+import '../../i18n.dart';
 import '../../models.dart';
 import '../../ui.dart';
 
@@ -50,13 +51,15 @@ class _StaffHomeState extends State<StaffHome> {
         const SizedBox(width: 12),
         Expanded(
           child: Text(
-            '${itemTitle(item.color, item.category)} registered at ${item.location}.'
-            '${notified > 0 ? ' $notified passenger(s) with a matching report were notified.' : ''}',
+            '{item} registered at {place}.'.trf({'item': itemTitle(item.color, item.category), 'place': item.location}) +
+                (notified > 0
+                    ? ' ${trn(notified, '{n} passenger with a matching report was notified.', '{n} passengers with a matching report were notified.')}'
+                    : ''),
           ),
         ),
       ]),
       action: SnackBarAction(
-        label: 'REGISTER ANOTHER',
+        label: 'REGISTER ANOTHER'.tr,
         textColor: Colors.white,
         onPressed: () => setState(() => _tab = 0),
       ),
@@ -75,7 +78,7 @@ class _StaffHomeState extends State<StaffHome> {
     const titles = ['Smart Intake', 'Inventory', 'Ownership review', 'Pick-up desk', 'Verification log'];
     return Scaffold(
       appBar: AppBar(
-        title: Text('Staff · ${titles[_tab]}'),
+        title: Text('Staff · {page}'.trf({'page': titles[_tab].tr})),
         actions: [
           ListenableBuilder(
             listenable: AppData.instance,
@@ -109,12 +112,12 @@ class _StaffHomeState extends State<StaffHome> {
           if (i == 2) _reviewKey.currentState?.refresh();
           if (i == 4) _attemptsKey.currentState?.refresh();
         },
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.add_a_photo_outlined), selectedIcon: Icon(Icons.add_a_photo), label: 'Intake'),
-          NavigationDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2), label: 'Inventory'),
-          NavigationDestination(icon: Icon(Icons.fact_check_outlined), selectedIcon: Icon(Icons.fact_check), label: 'Review'),
-          NavigationDestination(icon: Icon(Icons.qr_code_scanner), label: 'Pick-up'),
-          NavigationDestination(icon: Icon(Icons.gpp_maybe_outlined), selectedIcon: Icon(Icons.gpp_maybe), label: 'Attempts'),
+        destinations: [
+          NavigationDestination(icon: const Icon(Icons.add_a_photo_outlined), selectedIcon: const Icon(Icons.add_a_photo), label: 'Intake'.tr),
+          NavigationDestination(icon: const Icon(Icons.inventory_2_outlined), selectedIcon: const Icon(Icons.inventory_2), label: 'Inventory'.tr),
+          NavigationDestination(icon: const Icon(Icons.fact_check_outlined), selectedIcon: const Icon(Icons.fact_check), label: 'Review'.tr),
+          NavigationDestination(icon: const Icon(Icons.qr_code_scanner), label: 'Pick-up'.tr),
+          NavigationDestination(icon: const Icon(Icons.gpp_maybe_outlined), selectedIcon: const Icon(Icons.gpp_maybe), label: 'Attempts'.tr),
         ],
       ),
     );

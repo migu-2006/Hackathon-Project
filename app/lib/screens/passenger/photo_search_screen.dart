@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../api.dart';
 import '../../app_state.dart';
+import '../../i18n.dart';
 import '../../models.dart';
 import '../../theme.dart';
 import '../../ui.dart';
@@ -85,9 +86,9 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
               child: Row(children: [
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('Your photo', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    Text('Your photo'.tr, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
                     Text(
-                      _photo == null ? 'No photo selected' : '${_photo!.name} · Ready to search',
+                      _photo == null ? 'No photo selected'.tr : '{file} · Ready to search'.trf({'file': _photo!.name}),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: p.muted, fontSize: 11.5),
@@ -97,25 +98,25 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
                 TextButton.icon(
                   onPressed: _choose,
                   icon: const Icon(Icons.photo_library_outlined, size: 16),
-                  label: const Text('Choose photo', style: TextStyle(fontSize: 12.5)),
+                  label: Text('Choose photo'.tr, style: const TextStyle(fontSize: 12.5)),
                 ),
               ]),
             ),
           ]),
         ),
         const SizedBox(height: 8),
-        const Text('For a clearer search', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        Text('For a clearer search'.tr, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
         const SizedBox(height: 4),
         Text(
-          'Choose a clear photo with one item in view. Show its shape and colour; avoid faces and personal documents. JPG or PNG, up to 10 MB.',
+          'Choose a clear photo with one item in view. Show its shape and colour; avoid faces and personal documents. JPG or PNG, up to 10 MB.'.tr,
           style: TextStyle(color: p.muted, fontSize: 12, height: 1.4),
         ),
         const SizedBox(height: 14),
         Row(children: [
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Search airport', style: TextStyle(color: p.muted, fontSize: 11.5)),
-              Text('${airport.short} Lost Property', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              Text('Search airport'.tr, style: TextStyle(color: p.muted, fontSize: 11.5)),
+              Text('{airport} Lost Property'.trf({'airport': airport.short}), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
             ]),
           ),
           FilterPill(label: airport.code, active: true),
@@ -126,7 +127,7 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
           child: TextButton.icon(
             onPressed: () => Navigator.of(context).pop(),
             icon: const Icon(Icons.search, size: 16),
-            label: const Text('Use text search instead', style: TextStyle(fontSize: 12.5)),
+            label: Text('Use text search instead'.tr, style: const TextStyle(fontSize: 12.5)),
           ),
         ),
         _disclaimer,
@@ -160,7 +161,7 @@ class PhotoResultsScreen extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Your photo', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                Text('Your photo'.tr, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
                 Text('${data.airport.short} · ${data.airport.code}', style: TextStyle(color: p.muted, fontSize: 11.5)),
               ]),
             ),
@@ -169,19 +170,19 @@ class PhotoResultsScreen extends StatelessWidget {
                 final f = await pickPhoto(context);
                 if (f != null && context.mounted) Navigator.of(context).pop(f);
               },
-              child: const Text('Change'),
+              child: Text('Change'.tr),
             ),
           ]),
         ),
         const SizedBox(height: 8),
         Wrap(spacing: 8, runSpacing: 8, children: [
           FilterPill(label: data.airport.code, active: true),
-          FilterPill(label: capitalize(query.category), trailingIcon: null),
-          FilterPill(label: capitalize(query.color), trailingIcon: null),
+          FilterPill(label: categoryName(query.category), trailingIcon: null),
+          FilterPill(label: colorName(query.color), trailingIcon: null),
         ]),
         const SizedBox(height: 8),
         SectionTitle(
-          '${matches.length} visually similar item${matches.length == 1 ? '' : 's'}',
+          trn(matches.length, '{n} visually similar item', '{n} visually similar items'),
           trailing: 'Most similar first',
         ),
         if (matches.length > 1)
@@ -192,7 +193,7 @@ class PhotoResultsScreen extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'Clear photo for the closest match only; the others stay blurred to protect their owners.',
+                  'Clear photo for the closest match only; the others stay blurred to protect their owners.'.tr,
                   style: TextStyle(color: p.muted, fontSize: 12),
                 ),
               ),
@@ -218,7 +219,7 @@ class PhotoResultsScreen extends StatelessWidget {
               ..pop()
               ..pop(),
             icon: const Icon(Icons.search, size: 16),
-            label: const Text('Use text search instead', style: TextStyle(fontSize: 12.5)),
+            label: Text('Use text search instead'.tr, style: const TextStyle(fontSize: 12.5)),
           ),
         ),
       ]),

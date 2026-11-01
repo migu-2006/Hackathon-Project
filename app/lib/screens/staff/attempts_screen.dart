@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../api.dart';
 import '../../app_state.dart';
+import '../../i18n.dart';
 import '../../models.dart';
 import '../../theme.dart';
 import '../../ui.dart';
@@ -36,14 +37,15 @@ class AttemptsScreenState extends State<AttemptsScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Unlock this passenger?'),
-        content: const Text(
+        title: Text('Unlock this passenger?'.tr),
+        content: Text(
           'Only do this after checking their ID and boarding pass. '
-          'Their wrong answers stay in the log but stop counting, and they can answer again.',
+                  'Their wrong answers stay in the log but stop counting, and they can answer again.'
+              .tr,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Unlock')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancel'.tr)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Unlock'.tr)),
         ],
       ),
     );
@@ -53,7 +55,7 @@ class AttemptsScreenState extends State<AttemptsScreen> {
       await Api.instance.unlockClaims(userId, itemId);
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Unlocked: the passenger can try again.')));
+          .showSnackBar(SnackBar(content: Text('Unlocked: the passenger can try again.'.tr)));
       refresh();
     } catch (e) {
       if (mounted) showError(context, e);
@@ -81,7 +83,8 @@ class AttemptsScreenState extends State<AttemptsScreen> {
                   ? (_lockedOnly
                         ? 'No passengers are locked out.'
                         : 'No answers yet. Every ownership answer is logged here.')
-                  : '${groups.length} passenger/item pair(s)${locked > 0 ? ' · $locked locked out' : ''}',
+                  : trn(groups.length, '{n} passenger/item pair', '{n} passenger/item pairs') +
+                      (locked > 0 ? ' · ${'{n} locked out'.trf({'n': locked})}' : ''),
             ),
             Row(
               children: [
@@ -139,7 +142,7 @@ class AttemptsScreenState extends State<AttemptsScreen> {
                       '${AppData.instance.itemRef(item)} · ${item.location}',
                       style: TextStyle(color: p.muted, fontSize: 12),
                     ),
-                    Text('Passenger $userId', style: TextStyle(color: p.muted, fontSize: 12)),
+                    Text('Passenger {id}'.trf({'id': userId}), style: TextStyle(color: p.muted, fontSize: 12)),
                   ],
                 ),
               ),
@@ -154,16 +157,16 @@ class AttemptsScreenState extends State<AttemptsScreen> {
                 const RBadge('Locked out', icon: Icons.lock, kind: BadgeKind.warning)
               else
                 RBadge(
-                  '$failed / $max wrong',
+                  '{failed} / {max} wrong'.trf({'failed': failed, 'max': max}),
                   icon: Icons.shield_outlined,
                   kind: failed > 0 ? BadgeKind.warning : BadgeKind.neutral,
                 ),
-              RBadge('${attempts.length} attempt${attempts.length == 1 ? '' : 's'}', kind: BadgeKind.neutral),
+              RBadge(trn(attempts.length, '{n} attempt', '{n} attempts'), kind: BadgeKind.neutral),
             ],
           ),
           if (item.secretDetail?.isNotEmpty == true) ...[
             const SizedBox(height: 8),
-            Text('Hidden detail: ${item.secretDetail}', style: TextStyle(color: p.warning, fontSize: 12.5)),
+            Text('Hidden detail: {detail}'.trf({'detail': item.secretDetail}), style: TextStyle(color: p.warning, fontSize: 12.5)),
           ],
           const SizedBox(height: 6),
           for (final a in attempts) _attemptRow(p, a),
@@ -174,7 +177,7 @@ class AttemptsScreenState extends State<AttemptsScreen> {
               child: OutlinedButton.icon(
                 onPressed: _busy.contains('$userId/${item.id}') ? null : () => _unlock(userId, item.id),
                 icon: const Icon(Icons.lock_open),
-                label: const Text('Unlock after ID check'),
+                label: Text('Unlock after ID check'.tr),
               ),
             ),
           ],
@@ -202,7 +205,7 @@ class AttemptsScreenState extends State<AttemptsScreen> {
               children: [
                 Text('"${a['answer']}"', style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500)),
                 Text(
-                  '$label · ${fmtDayTime(DateTime.parse(a['timestamp']).toLocal())}',
+                  '${label.tr} · ${fmtDayTime(DateTime.parse(a['timestamp']).toLocal())}',
                   style: TextStyle(color: p.muted, fontSize: 11.5),
                 ),
               ],

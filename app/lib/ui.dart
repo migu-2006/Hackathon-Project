@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'app_state.dart';
 import 'glass.dart';
+import 'i18n.dart';
 import 'models.dart';
 import 'screens/passenger/shell.dart';
 import 'theme.dart';
@@ -12,11 +13,9 @@ import 'widgets.dart';
 
 // ---------------------------------------------------------------- formatting
 
-const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-String fmtDate(DateTime d) => '${d.day} ${_longMonth(d.month)} ${d.year}';
-String fmtDay(DateTime d) => '${d.day} ${_months[d.month - 1]}';
-String fmtDayYear(DateTime d) => '${d.day} ${_months[d.month - 1]} ${d.year}';
+String fmtDate(DateTime d) => longDate(d);
+String fmtDay(DateTime d) => shortDay(d);
+String fmtDayYear(DateTime d) => '${shortDay(d)} ${d.year}';
 String fmtTime(DateTime d) => '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 String fmtDayTime(DateTime d) => '${fmtDay(d)} · ${fmtTime(d)}';
 
@@ -24,18 +23,13 @@ String fmtUpdated(DateTime d) {
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
   final day = DateTime(d.year, d.month, d.day);
-  if (day == today) return 'today, ${fmtTime(d)}';
-  if (day == today.subtract(const Duration(days: 1))) return 'yesterday, ${fmtTime(d)}';
+  if (day == today) return 'today, {time}'.trf({'time': fmtTime(d)});
+  if (day == today.subtract(const Duration(days: 1))) return 'yesterday, {time}'.trf({'time': fmtTime(d)});
   return '${fmtDay(d)}, ${fmtTime(d)}';
 }
 
-String _longMonth(int m) => const [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
-    ][m - 1];
-
-String itemTitle(String? color, String category) =>
-    capitalize('${color == null || color.isEmpty ? '' : '$color '}${category == 'other' ? 'item' : category}');
+/// "Black backpack", in the app language (the colour agrees with the noun in Romanian/Spanish).
+String itemTitle(String? color, String category) => itemName(color, category);
 
 const categoryGroups = {
   'Electronics': ['phone', 'laptop', 'headphones', 'camera', 'electronics'],
@@ -47,9 +41,9 @@ const categoryGroups = {
 
 String categoryLabel(String c) {
   for (final e in categoryGroups.entries) {
-    if (e.value.contains(c)) return '${e.key} · ${capitalize(c)}';
+    if (e.value.contains(c)) return '${e.key.tr} · ${categoryName(c)}';
   }
-  return capitalize(c);
+  return categoryName(c);
 }
 
 // ---------------------------------------------------------------- app bar
@@ -80,13 +74,17 @@ class _RefreshButtonState extends State<RefreshButton> {
   }
 
   @override
-  Widget build(BuildContext context) => IconButton(
-        style: glassIconStyle(context),
-        tooltip: 'Refresh',
-        onPressed: _busy ? null : _run,
-        icon: _busy
-            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-            : const Icon(Icons.refresh),
+  Widget build(BuildContext context) => Padding(
+        // Breathing room before the next app bar button (account, map, new report...).
+        padding: const EdgeInsets.only(right: 8),
+        child: IconButton(
+          style: glassIconStyle(context),
+          tooltip: 'Refresh'.tr,
+          onPressed: _busy ? null : _run,
+          icon: _busy
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.refresh),
+        ),
       );
 }
 
@@ -99,13 +97,14 @@ PreferredSizeWidget rAppBar(BuildContext context, String title, {List<Widget> ac
       onPressed: () => Navigator.of(context).canPop() ? Navigator.of(context).pop() : AppShell.goTo(ShellTab.home),
     ),
     titleSpacing: 0,
-    title: Text(title),
+    title: Text(title.tr),
     actions: [
       ...actions,
+      if (actions.isNotEmpty) const SizedBox(width: 8),
       IconButton(
         style: glassIconStyle(context),
         icon: const Icon(Icons.help_outline),
-        tooltip: 'Help',
+        tooltip: 'Help'.tr,
         onPressed: () => AppShell.goTo(ShellTab.help),
       ),
       const SizedBox(width: 4),
@@ -122,7 +121,7 @@ class Eyebrow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Text(
-        text.toUpperCase(),
+        text.tr.toUpperCase(),
         style: TextStyle(
           fontSize: 10.5,
           fontWeight: FontWeight.w600,
@@ -145,10 +144,10 @@ class PageHeader extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         if (eyebrow != null) ...[Eyebrow(eyebrow!, color: p.primary), const SizedBox(height: 8)],
-        Text(title, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 26)),
+        Text(title.tr, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 26)),
         if (subtitle != null) ...[
           const SizedBox(height: 6),
-          Text(subtitle!, style: TextStyle(color: p.muted, fontSize: 13.5, height: 1.4)),
+          Text(subtitle!.tr, style: TextStyle(color: p.muted, fontSize: 13.5, height: 1.4)),
         ],
       ]),
     );
@@ -168,12 +167,12 @@ class SectionTitle extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 8),
       child: Row(children: [
-        Expanded(child: Text(text, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5))),
+        Expanded(child: Text(text.tr, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5))),
         ?trailingWidget,
         if (trailing != null)
           GestureDetector(
             onTap: onTrailing,
-            child: Text(trailing!, style: TextStyle(color: onTrailing == null ? p.muted : p.primary, fontSize: 12)),
+            child: Text(trailing!.tr, style: TextStyle(color: onTrailing == null ? p.muted : p.primary, fontSize: 12)),
           ),
       ]),
     );
@@ -204,7 +203,7 @@ class RBadge extends StatelessWidget {
       decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         if (icon != null) ...[Icon(icon, size: 12, color: fg), const SizedBox(width: 4)],
-        Text(label, style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w600)),
+        Text(label.tr, style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w600)),
       ]),
     );
   }
@@ -268,10 +267,10 @@ class NoteCard extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+            Text(title.tr, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
             if (body != null) ...[
               const SizedBox(height: 3),
-              Text(body!, style: TextStyle(color: p.muted, fontSize: 12, height: 1.4)),
+              Text(body!.tr, style: TextStyle(color: p.muted, fontSize: 12, height: 1.4)),
             ],
           ]),
         ),
@@ -296,9 +295,9 @@ class InfoRow extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: TextStyle(color: p.muted, fontSize: 11.5)),
+            Text(label.tr, style: TextStyle(color: p.muted, fontSize: 11.5)),
             const SizedBox(height: 2),
-            Text(value, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13.5)),
+            Text(value.tr, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13.5)),
           ]),
         ),
       ]),
@@ -315,7 +314,7 @@ class HelpLink extends StatelessWidget {
         child: TextButton.icon(
           onPressed: () => AppShell.goTo(ShellTab.help),
           icon: const Icon(Icons.support_agent, size: 16),
-          label: Text(text, style: const TextStyle(fontSize: 12.5)),
+          label: Text(text.tr, style: const TextStyle(fontSize: 12.5)),
         ),
       );
 }
@@ -335,7 +334,7 @@ class PrimaryButton extends StatelessWidget {
           onPressed: busy ? null : onPressed,
           child: Row(children: [
             const SizedBox(width: 8),
-            Expanded(child: Text(label)),
+            Expanded(child: Text(label.tr)),
             busy
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                 : Icon(icon, size: 20),
@@ -393,7 +392,7 @@ class ItemImage extends StatelessWidget {
                       Icon(Icons.visibility_off_outlined, color: Colors.white, size: small ? 14 : 16),
                       if (!small) ...[
                         const SizedBox(width: 6),
-                        const Text('Photo hidden', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                        Text('Photo hidden'.tr, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
                       ],
                     ]),
                   ),
@@ -429,7 +428,7 @@ class FoundItemTile extends StatelessWidget {
             Text(itemTitle(item.color, item.category), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5)),
             const SizedBox(height: 2),
             Text(data.zoneLabel(item.location), style: TextStyle(color: p.muted, fontSize: 12)),
-            Text('Found ${fmtDayYear(item.timestamp)}', style: TextStyle(color: p.muted, fontSize: 12)),
+            Text('Found {date}'.trf({'date': fmtDayYear(item.timestamp)}), style: TextStyle(color: p.muted, fontSize: 12)),
           ]),
         ),
         Align(alignment: Alignment.bottomRight, child: Icon(Icons.arrow_forward, size: 18, color: p.primary)),
@@ -453,7 +452,7 @@ class SelectField extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500)),
+        Text(label.tr, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500)),
         const SizedBox(height: 6),
         Material(
           color: p.surface,
@@ -467,7 +466,7 @@ class SelectField extends StatelessWidget {
                 Icon(icon, size: 18, color: p.muted),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(value ?? hint, style: TextStyle(fontSize: 14, color: value == null ? p.muted : p.text)),
+                  child: Text(value ?? hint.tr, style: TextStyle(fontSize: 14, color: value == null ? p.muted : p.text)),
                 ),
                 Icon(Icons.keyboard_arrow_down, color: onTap == null ? p.border : p.muted),
               ]),
@@ -501,7 +500,7 @@ class FilterPill extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Text(label, style: TextStyle(fontSize: 12, color: active ? p.primary : p.text, fontWeight: FontWeight.w500)),
+            Text(label.tr, style: TextStyle(fontSize: 12, color: active ? p.primary : p.text, fontWeight: FontWeight.w500)),
             if (trailingIcon != null) ...[const SizedBox(width: 4), Icon(trailingIcon, size: 16, color: active ? p.primary : p.muted)],
           ]),
         ),
@@ -521,11 +520,11 @@ Future<T?> pickFromList<T>(BuildContext context, String title, List<(T, String)>
       child: ListView(shrinkWrap: true, children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-          child: Text(title, style: Theme.of(ctx).textTheme.titleMedium),
+          child: Text(title.tr, style: Theme.of(ctx).textTheme.titleMedium),
         ),
         for (final (value, label) in options)
           ListTile(
-            title: Text(label),
+            title: Text(label.tr),
             trailing: value == selected ? Icon(Icons.check, color: Palette.of(ctx).primary) : null,
             onTap: () => Navigator.pop(ctx, value),
           ),
@@ -548,7 +547,7 @@ Future<void> pickAirport(BuildContext context) async {
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: Text('Choose airport', style: Theme.of(ctx).textTheme.titleMedium),
+            child: Text('Choose airport'.tr, style: Theme.of(ctx).textTheme.titleMedium),
           ),
           for (final a in data.airports)
             ListTile(

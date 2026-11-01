@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../app_state.dart';
 import '../../api.dart';
+import '../../i18n.dart';
 import '../../models.dart';
 import '../../poi.dart';
 import '../../theme.dart';
@@ -24,7 +25,7 @@ class AirportMapScreen extends StatelessWidget {
       builder: (context, _) {
         final code = airport ?? data.airport.code;
         return Scaffold(
-          appBar: rAppBar(context, '${data.airportByCode(code).short} map'),
+          appBar: rAppBar(context, '{airport} map'.trf({'airport': data.airportByCode(code).short})),
           body: AirportMapView(airport: code, focusZoneId: focusZoneId),
         );
       },
@@ -157,9 +158,9 @@ class _AirportMapViewState extends State<AirportMapView> with SingleTickerProvid
         initialChildSize: 0.5,
         builder: (_, scroll) => ListView(controller: scroll, padding: const EdgeInsets.fromLTRB(20, 0, 20, 20), children: [
           Text(zone.label, style: Theme.of(context).textTheme.titleLarge),
-          Text('${zone.items.length} item(s) handed in here', style: TextStyle(color: Palette.of(context).muted)),
+          Text(trn(zone.items.length, '{n} item handed in here', '{n} items handed in here'), style: TextStyle(color: Palette.of(context).muted)),
           if (zone.estimated)
-            Text('Approximate position', style: TextStyle(color: Palette.of(context).muted, fontSize: 11.5)),
+            Text('Approximate position'.tr, style: TextStyle(color: Palette.of(context).muted, fontSize: 11.5)),
           const SizedBox(height: 10),
           for (final item in zone.items)
             FoundItemTile(
@@ -268,7 +269,7 @@ class _AirportMapViewState extends State<AirportMapView> with SingleTickerProvid
                 children: [
                   _Chip(label: 'All floors', small: true, selected: _level == null, onTap: () => setState(() => _level = null)),
                   for (final l in levels)
-                    _Chip(label: 'Level $l', small: true, selected: _level == l, onTap: () => setState(() => _level = l)),
+                    _Chip(label: 'Level {level}'.trf({'level': l}), small: true, selected: _level == l, onTap: () => setState(() => _level = l)),
                 ],
               ),
             ),
@@ -334,7 +335,8 @@ class _AirportMapViewState extends State<AirportMapView> with SingleTickerProvid
                     left: 12,
                     top: 8,
                     child: _Glass(
-                      child: Text('$total item(s) on the map · tap a pin or a place', style: const TextStyle(fontSize: 11.5)),
+                      child: Text(trn(total, '{n} item on the map · tap a pin or a place', '{n} items on the map · tap a pin or a place'),
+                          style: const TextStyle(fontSize: 11.5)),
                     ),
                   ),
                   Positioned(
@@ -544,7 +546,7 @@ class _PoiMarker extends StatelessWidget {
     final p = Palette.of(context);
     return Semantics(
       button: true,
-      label: style.label,
+      label: style.label.tr,
       child: GestureDetector(
         onTap: onTap,
         child: AnimatedScale(
@@ -577,7 +579,7 @@ class _PoiSheet extends StatelessWidget {
     if (map.zones.isEmpty) return null;
     final z = map.zones.reduce((a, b) => (a.pos - poi.pos).distance <= (b.pos - poi.pos).distance ? a : b);
     final d = (z.pos - poi.pos).distance;
-    return d < 120 ? '${z.group} · near ${z.name}' : z.group;
+    return d < 120 ? '{terminal} · near {place}'.trf({'terminal': z.group, 'place': z.name}) : z.group;
   }
 
   @override
@@ -585,7 +587,7 @@ class _PoiSheet extends StatelessWidget {
     final p = Palette.of(context);
     final style = poiStyle(poi.type, poi.kind);
     final info = poi.info;
-    final title = poi.name.isNotEmpty ? poi.name : style.label;
+    final title = poi.name.isNotEmpty ? poi.name : style.label.tr;
     final rawHours = info['hours'];
     final hours = rawHours == null ? null : OpeningHours.tryParse(rawHours);
     final status = hours?.statusAt(DateTime.now());
@@ -601,7 +603,7 @@ class _PoiSheet extends StatelessWidget {
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(title, style: Theme.of(context).textTheme.titleLarge),
-                if (poi.name.isNotEmpty) Text(style.label, style: TextStyle(color: p.muted, fontSize: 13)),
+                if (poi.name.isNotEmpty) Text(style.label.tr, style: TextStyle(color: p.muted, fontSize: 13)),
               ]),
             ),
           ]),
@@ -618,7 +620,7 @@ class _PoiSheet extends StatelessWidget {
           ),
           if (where != null) InfoRow(icon: Icons.place_outlined, label: 'Where', value: where),
           if (poi.levels.isNotEmpty)
-            InfoRow(icon: Icons.layers_outlined, label: 'Floor', value: poi.levels.map((l) => 'Level $l').join(', ')),
+            InfoRow(icon: Icons.layers_outlined, label: 'Floor', value: poi.levels.map((l) => 'Level {level}'.trf({'level': l})).join(', ')),
           if (info['airside'] != null)
             InfoRow(
               icon: Icons.security,
@@ -644,7 +646,7 @@ class _PoiSheet extends StatelessWidget {
           if (info['phone'] != null) InfoRow(icon: Icons.call_outlined, label: 'Phone', value: info['phone']!),
           if (info['website'] != null) InfoRow(icon: Icons.language, label: 'Website', value: info['website']!),
           const SizedBox(height: 8),
-          Text('Details from OpenStreetMap — they may be out of date.', style: TextStyle(color: p.muted, fontSize: 11)),
+          Text('Details from OpenStreetMap — they may be out of date.'.tr, style: TextStyle(color: p.muted, fontSize: 11)),
         ]),
       ),
     );

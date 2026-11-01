@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../api.dart';
 import '../app_state.dart';
+import '../i18n.dart';
 import '../theme.dart';
 import '../ui.dart';
 
@@ -98,7 +99,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     final p = Palette.of(context);
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Verify your email')),
+      appBar: AppBar(title: Text('Verify your email'.tr)),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -108,15 +109,15 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Icon(Icons.mark_email_unread_outlined, size: 64, color: p.primary),
                 const SizedBox(height: 16),
-                Text('Check your email',
+                Text('Check your email'.tr,
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: p.text)),
                 const SizedBox(height: 8),
                 Text.rich(
                   TextSpan(children: [
-                    const TextSpan(text: 'We sent a 6-digit code to\n'),
+                    TextSpan(text: 'We sent a 6-digit code to\n'.tr),
                     TextSpan(text: widget.email, style: TextStyle(fontWeight: FontWeight.w600, color: p.text)),
-                    const TextSpan(text: '\nEnter it below to activate your account.'),
+                    TextSpan(text: '\nEnter it below to activate your account.'.tr),
                   ]),
                   textAlign: TextAlign.center,
                   style: TextStyle(color: p.muted, height: 1.5),
@@ -136,7 +137,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                           size: 20, color: _error != null ? scheme.onErrorContainer : p.primary),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Text(_error ?? _info!,
+                        child: Text((_error ?? _info!).tr,
                             style: TextStyle(color: _error != null ? scheme.onErrorContainer : p.text)),
                       ),
                     ]),
@@ -147,9 +148,9 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                 const SizedBox(height: 12),
                 TextButton(
                   onPressed: _wait > 0 ? null : _resend,
-                  child: Text(_wait > 0 ? 'Resend code in ${_wait}s' : 'Didn\'t get it? Resend code'),
+                  child: Text(_wait > 0 ? 'Resend code in {n}s'.trf({'n': _wait}) : 'Didn\'t get it? Resend code'.tr),
                 ),
-                Text('Also check your spam folder. The code expires after 10 minutes.',
+                Text('Also check your spam folder. The code expires after 10 minutes.'.tr,
                     textAlign: TextAlign.center, style: TextStyle(color: p.muted, fontSize: 12)),
               ]),
             ),

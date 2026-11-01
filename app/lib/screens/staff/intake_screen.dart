@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../api.dart';
 import '../../app_state.dart';
+import '../../i18n.dart';
 import '../../models.dart';
 import '../../ui.dart';
 import '../../widgets.dart';
@@ -56,7 +57,7 @@ class _IntakeScreenState extends State<IntakeScreen> {
 
   Future<void> _pickZone() async {
     final zones = AppData.instance.zones;
-    final z = await pickFromList(context, 'Found at (${AppData.instance.airport.code})',
+    final z = await pickFromList(context, 'Found at ({airport})'.trf({'airport': AppData.instance.airport.code}),
         [for (final z in zones) (z.id, z.label)], selected: _zone);
     if (z != null) setState(() => _zone = z);
   }
@@ -139,11 +140,11 @@ class _IntakeScreenState extends State<IntakeScreen> {
             ]),
           const SizedBox(height: 16),
           if (_analyzing)
-            const Card(
+            Card(
               child: ListTile(
-                leading: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3)),
-                title: Text('AI is analyzing the photo…'),
-                subtitle: Text('Detecting object type, color and visible text'),
+                leading: const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3)),
+                title: Text('AI is analyzing the photo…'.tr),
+                subtitle: Text('Detecting object type, color and visible text'.tr),
               ),
             ),
           if (_ai != null)
@@ -151,10 +152,10 @@ class _IntakeScreenState extends State<IntakeScreen> {
               color: theme.colorScheme.primaryContainer,
               child: ListTile(
                 leading: const Icon(Icons.auto_awesome),
-                title: Text('AI: ${_ai!.color} ${_ai!.label}'),
+                title: Text('AI: ${_ai!.color.isEmpty ? '' : colorName(_ai!.color)} ${_ai!.label}'),
                 subtitle: Text([
-                  'Category: ${_ai!.category} (${(_ai!.confidence * 100).round()}%)',
-                  if (_ai!.text.isNotEmpty) 'Text: "${_ai!.text}"',
+                  'Category: {category} ({pct}%)'.trf({'category': categoryName(_ai!.category), 'pct': (_ai!.confidence * 100).round()}),
+                  if (_ai!.text.isNotEmpty) 'Text: "{text}"'.trf({'text': _ai!.text}),
                 ].join('\n')),
                 trailing: ColorDot(colorFromHex(_ai!.colorHex)),
               ),
@@ -167,7 +168,7 @@ class _IntakeScreenState extends State<IntakeScreen> {
           ],
           const SizedBox(height: 12),
           SelectField(
-            label: 'Found at (zone / gate) · ${AppData.instance.airport.short}',
+            label: 'Found at (zone / gate) · {airport}'.trf({'airport': AppData.instance.airport.short}),
             icon: Icons.place_outlined,
             value: _zone == null ? null : AppData.instance.zoneByName(_zone!)?.label,
             hint: 'Select a zone or gate',
@@ -176,15 +177,15 @@ class _IntakeScreenState extends State<IntakeScreen> {
           const SizedBox(height: 12),
           TextField(
             controller: _notes,
-            decoration: const InputDecoration(labelText: 'Public notes (optional)', prefixIcon: Icon(Icons.notes)),
+            decoration: InputDecoration(labelText: 'Public notes (optional)'.tr, prefixIcon: const Icon(Icons.notes)),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _secret,
-            decoration: const InputDecoration(
-              labelText: 'Hidden verification detail (optional)',
-              helperText: 'Not shown to passengers. E.g. contents, sticker, engraving.',
-              prefixIcon: Icon(Icons.lock),
+            decoration: InputDecoration(
+              labelText: 'Hidden verification detail (optional)'.tr,
+              helperText: 'Not shown to passengers. E.g. contents, sticker, engraving.'.tr,
+              prefixIcon: const Icon(Icons.lock),
             ),
           ),
           const SizedBox(height: 24),
@@ -193,7 +194,7 @@ class _IntakeScreenState extends State<IntakeScreen> {
             icon: _saving
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.save),
-            label: const Text('Register found item'),
+            label: Text('Register found item'.tr),
             style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
           ),
         ]),

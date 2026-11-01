@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../api.dart';
+import '../../i18n.dart';
 import '../../models.dart';
 import '../../widgets.dart';
 
@@ -51,30 +52,30 @@ class _PickupScreenState extends State<PickupScreen> {
         child: ListView(padding: const EdgeInsets.all(24), shrinkWrap: true, children: [
           Icon(Icons.qr_code_2, size: 96, color: Theme.of(context).colorScheme.primary),
           const SizedBox(height: 16),
-          const Text('Scan the passenger\'s pick-up QR code', textAlign: TextAlign.center),
+          Text('Scan the passenger\'s pick-up QR code'.tr, textAlign: TextAlign.center),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _scan,
             icon: const Icon(Icons.qr_code_scanner),
-            label: Text(isDesktop ? 'Scan with webcam' : 'Scan QR code'),
+            label: Text((isDesktop ? 'Scan with webcam' : 'Scan QR code').tr),
             style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
           ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: _scanImage,
             icon: const Icon(Icons.image_search),
-            label: const Text('Read QR from a screenshot'),
+            label: Text('Read QR from a screenshot'.tr),
           ),
           const SizedBox(height: 24),
-          const Row(children: [Expanded(child: Divider()), Text('  or type the pickup code  '), Expanded(child: Divider())]),
+          Row(children: [const Expanded(child: Divider()), Text('  ${'or type the pickup code'.tr}  '), const Expanded(child: Divider())]),
           const SizedBox(height: 16),
           TextField(
             controller: _token,
             textCapitalization: TextCapitalization.characters,
             decoration: InputDecoration(
-              labelText: 'Pickup code',
-              hintText: 'e.g. K7Q-M4X',
-              helperText: 'The 6 characters under the passenger\'s QR',
+              labelText: 'Pickup code'.tr,
+              hintText: 'e.g. K7Q-M4X'.tr,
+              helperText: 'The 6 characters under the passenger\'s QR'.tr,
               suffixIcon: IconButton(icon: const Icon(Icons.arrow_forward), onPressed: () => _open(_token.text)),
             ),
             onSubmitted: _open,
@@ -97,7 +98,7 @@ class _ScannerPageState extends State<_ScannerPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Scan pick-up code')),
+        appBar: AppBar(title: Text('Scan pick-up code'.tr)),
         body: MobileScanner(
           onDetect: (capture) {
             final value = capture.barcodes.firstOrNull?.rawValue;
@@ -172,20 +173,31 @@ class _WebcamScannerPageState extends State<_WebcamScannerPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Scan pick-up code')),
+        appBar: AppBar(title: Text('Scan pick-up code'.tr)),
         body: _error != null
             ? EmptyState(icon: Icons.videocam_off, message: _error!)
             : _camera == null
                 ? const Center(child: CircularProgressIndicator())
                 : Column(children: [
                     Expanded(child: Center(child: CameraPreview(_camera!))),
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('Hold the passenger\'s QR code up to the webcam.', textAlign: TextAlign.center),
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text('Hold the passenger\'s QR code up to the webcam.'.tr, textAlign: TextAlign.center),
                     ),
                   ]),
       );
 }
+
+/// Claim status from the server (ready_for_pickup...) as a readable, translated label.
+String _statusLabel(String s) => switch (s) {
+      'awaiting_answer' => 'Awaiting answer',
+      'under_review' => 'Claim under review',
+      'ready_for_pickup' => 'Ready for pickup',
+      'recovered' => 'Recovered',
+      'rejected' => 'Rejected',
+      'locked' => 'Locked out',
+      _ => s,
+    }.tr;
 
 class ClaimReviewScreen extends StatefulWidget {
   final String token;
@@ -205,7 +217,7 @@ class _ClaimReviewScreenState extends State<ClaimReviewScreen> {
       final status = await Api.instance.decideClaim(widget.token, approved);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(status == 'recovered' ? 'Item handed over ✔ Status: Recovered' : 'Claim rejected'),
+        content: Text((status == 'recovered' ? 'Item handed over ✔ Status: Recovered' : 'Claim rejected').tr),
       ));
       Navigator.pop(context);
     } catch (e) {
@@ -219,7 +231,7 @@ class _ClaimReviewScreenState extends State<ClaimReviewScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Verify claim')),
+      appBar: AppBar(title: Text('Verify claim'.tr)),
       body: FutureBuilder<Map<String, dynamic>>(
         future: _data,
         builder: (context, snap) {
@@ -235,7 +247,7 @@ class _ClaimReviewScreenState extends State<ClaimReviewScreen> {
               child: ListView(padding: const EdgeInsets.all(16), children: [
                 Chip(
                   avatar: Icon(pending ? Icons.hourglass_top : Icons.info_outline, size: 18),
-                  label: Text('Status: ${claim['status']}'),
+                  label: Text('Status: {status}'.trf({'status': _statusLabel('${claim['status']}')})),
                 ),
                 ItemCard(item: item),
                 const SizedBox(height: 8),
@@ -243,21 +255,21 @@ class _ClaimReviewScreenState extends State<ClaimReviewScreen> {
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('Verification', style: theme.textTheme.titleMedium),
+                      Text('Verification'.tr, style: theme.textTheme.titleMedium),
                       const SizedBox(height: 8),
-                      Text('Q: ${claim['question']}', style: theme.textTheme.bodySmall),
+                      Text('Q: {question}'.trf({'question': claim['question']}), style: theme.textTheme.bodySmall),
                       const SizedBox(height: 4),
-                      Text('Passenger answer:', style: theme.textTheme.labelLarge),
+                      Text('Passenger answer:'.tr, style: theme.textTheme.labelLarge),
                       Text('"${claim['answer'] ?? '—'}"', style: theme.textTheme.bodyLarge),
                       const Divider(height: 24),
-                      Text('Compare with (staff only):', style: theme.textTheme.labelLarge),
-                      Text('Hidden detail: ${item.secretDetail?.isNotEmpty == true ? item.secretDetail : '—'}'),
-                      if (item.text.isNotEmpty) Text('Text on item: "${item.text}"'),
-                      if (item.notes?.isNotEmpty == true) Text('Notes: ${item.notes}'),
+                      Text('Compare with (staff only):'.tr, style: theme.textTheme.labelLarge),
+                      Text('Hidden detail: {detail}'.trf({'detail': item.secretDetail?.isNotEmpty == true ? item.secretDetail : '—'})),
+                      if (item.text.isNotEmpty) Text('Text on item: "{text}"'.trf({'text': item.text})),
+                      if (item.notes?.isNotEmpty == true) Text('Notes: {notes}'.trf({'notes': item.notes})),
                       const Divider(height: 24),
-                      Text('Original report:', style: theme.textTheme.labelLarge),
+                      Text('Original report:'.tr, style: theme.textTheme.labelLarge),
                       Text('${report['description']}'),
-                      Text('Passenger: ${claim['userId']}', style: theme.textTheme.bodySmall),
+                      Text('Passenger: {id}'.trf({'id': claim['userId']}), style: theme.textTheme.bodySmall),
                     ]),
                   ),
                 ),
@@ -268,7 +280,7 @@ class _ClaimReviewScreenState extends State<ClaimReviewScreen> {
                       child: OutlinedButton.icon(
                         onPressed: _busy ? null : () => _decide(false),
                         icon: const Icon(Icons.close),
-                        label: const Text('Reject'),
+                        label: Text('Reject'.tr),
                         style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52)),
                       ),
                     ),
@@ -277,7 +289,7 @@ class _ClaimReviewScreenState extends State<ClaimReviewScreen> {
                       child: FilledButton.icon(
                         onPressed: _busy ? null : () => _decide(true),
                         icon: const Icon(Icons.check),
-                        label: const Text('Hand over'),
+                        label: Text('Hand over'.tr),
                         style: FilledButton.styleFrom(
                           minimumSize: const Size.fromHeight(52),
                           backgroundColor: Colors.green,

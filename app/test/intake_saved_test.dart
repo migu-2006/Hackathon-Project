@@ -43,7 +43,7 @@ void main() {
     expect(tester.takeException(), isNull); // used to throw "setState() callback argument returned a Future"
     expect(find.text('Staff · Inventory'), findsOneWidget);
     expect(find.textContaining('registered at Gate 3'), findsOneWidget);
-    expect(find.textContaining('2 passenger(s)'), findsOneWidget);
+    expect(find.textContaining('2 passengers with a matching report were notified'), findsOneWidget);
     expect(find.text('New'), findsOneWidget);
 
     // The app bar's refresh reloads the open tab (here: the inventory).

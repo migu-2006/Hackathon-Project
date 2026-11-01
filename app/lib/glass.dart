@@ -99,15 +99,12 @@ class _GlassPainter extends CustomPainter {
 ButtonLayerBuilder glassBuilder(ShapeBorder shape) =>
     (context, states, child) => LiquidGlass(shape: shape, pressed: states.contains(WidgetState.pressed), child: child!);
 
-/// Round glass for app bar icon buttons (back, help, refresh, account).
+/// Plain round style for app bar icon buttons (back, help, refresh, account).
 ButtonStyle glassIconStyle(BuildContext context) {
   final p = Palette.of(context);
-  const shape = CircleBorder();
   return IconButton.styleFrom(
-    backgroundColor: p.surface.withValues(alpha: 0.55),
-    shape: shape,
-    side: BorderSide(color: p.border.withValues(alpha: 0.6), width: 0.6),
-    shadowColor: Colors.black.withValues(alpha: 0.25),
-    elevation: 2,
-  ).copyWith(backgroundBuilder: glassBuilder(shape));
+    backgroundColor: p.surface,
+    shape: const CircleBorder(),
+    side: BorderSide(color: p.border, width: 0.6),
+  );
 }
