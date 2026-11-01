@@ -10,6 +10,7 @@ import '../../ui.dart';
 import 'item_details_screen.dart';
 import 'map_screen.dart';
 import 'photo_search_screen.dart';
+import 'report_screen.dart';
 
 /// "A place to start." — browse items held by the airport.
 class FoundItemsScreen extends StatefulWidget {
@@ -22,7 +23,11 @@ class FoundItemsScreen extends StatefulWidget {
 class _FoundItemsScreenState extends State<FoundItemsScreen> {
   final _search = TextEditingController();
   late String _airport = AppData.instance.airport.code;
-  late Future<List<FoundItem>> _items = Api.instance.foundItems(airport: _airport);
+  late Future<List<FoundItem>> _items = _fetch();
+  // The list depends on the passenger's routes: reload when a report adds new places.
+  late Set<String> _route = AppData.instance.routeAt(_airport);
+
+  Future<List<FoundItem>> _fetch() => Api.instance.foundItems(airport: _airport, onMyRoute: true);
   DateTimeRange? _dates;
   String? _category;
   bool _newestFirst = true;
@@ -39,19 +44,21 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
     super.dispose();
   }
 
-  /// Reload the list when the passenger switches airport.
+  /// Reload the list when the passenger switches airport or their routes change.
   void _onDataChanged() {
     final code = AppData.instance.airport.code;
-    if (code == _airport || !mounted) return;
+    final route = AppData.instance.routeAt(code);
+    if (!mounted || (code == _airport && route.length == _route.length && route.containsAll(_route))) return;
     setState(() {
       _airport = code;
-      _items = Api.instance.foundItems(airport: code);
+      _route = route;
+      _items = _fetch();
     });
   }
 
   Future<void> _reload() async {
     setState(() {
-      _items = Api.instance.foundItems(airport: _airport);
+      _items = _fetch();
     });
     await Future.wait([_items, AppData.instance.refresh()]);
   }
@@ -196,8 +203,40 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
                   Icon(Icons.photo_camera_outlined, size: 18, color: p.primary),
                 ]),
               ),
-            if (snap.hasData && items.isEmpty)
-              const NoteCard(icon: Icons.search_off, title: 'No items match', body: 'Try fewer filters, or report your item so we can notify you.'),
+            if (_route.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(children: [
+                  Icon(Icons.route, size: 16, color: p.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      trn(_route.length, 'Showing items found along your route ({n} place)',
+                          'Showing items found along your route ({n} places)'),
+                      style: TextStyle(color: p.muted, fontSize: 12),
+                    ),
+                  ),
+                ]),
+              ),
+            if (snap.hasData && _route.isEmpty) ...[
+              const NoteCard(
+                icon: Icons.route,
+                title: 'Tell us where you went',
+                body: 'Report your lost item and add the areas and shops you went through. '
+                    "We'll show you the items found along that route.",
+              ),
+              const SizedBox(height: 10),
+              PrimaryButton(
+                label: 'Report a lost item',
+                icon: Icons.add_circle_outline,
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReportScreen())),
+              ),
+            ] else if (snap.hasData && items.isEmpty)
+              const NoteCard(
+                icon: Icons.search_off,
+                title: 'No items match',
+                body: 'Nothing has been found along your route yet. We will notify you when something turns up.',
+              ),
             for (final item in items)
               FoundItemTile(
                 item: item,

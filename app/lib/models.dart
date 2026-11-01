@@ -1,5 +1,7 @@
 import 'dart:ui';
 
+import 'i18n.dart';
+
 const categories = [
   'backpack', 'handbag', 'suitcase', 'wallet', 'phone', 'laptop', 'electronics',
   'headphones', 'camera', 'glasses', 'watch', 'jewelry', 'keys', 'clothing',
@@ -55,7 +57,8 @@ class LostReport {
   final String description;
   final String category;
   final String? color;
-  final String? lastSeenLocation;
+  final String? lastSeenLocation; // the route as text ("A → B → C"), or one place on older reports
+  final List<String> route; // ids of the places on the route (see Place)
   final DateTime? travelDate;
   final String? imageUrl;
   final DateTime timestamp;
@@ -70,6 +73,7 @@ class LostReport {
         category = j['category'] ?? 'other',
         color = j['color'],
         lastSeenLocation = j['lastSeenLocation'],
+        route = List<String>.from(j['route'] ?? const []),
         travelDate = j['travelDate'] == null ? null : DateTime.tryParse(j['travelDate']),
         imageUrl = j['imageUrl'],
         timestamp = DateTime.parse(j['timestamp']).toLocal(),
@@ -198,6 +202,33 @@ class Airport {
     desk: 'Lost Property desk',
     team: 'Lost Property team',
   );
+}
+
+/// A stop on a passenger's route: a lost & found area, or a named shop / café / service
+/// (which the server ties to the nearest area).
+class Place {
+  final String id;
+  final String kind; // area, poi
+  final String type; // area, or the POI type (cafe, atm, ...)
+  final String? poiKind;
+  final String name;
+  final String terminal;
+  final String label; // "Terminal 2 · Food court", or "OTP Bank · Terminal 2 · Check-in hall"
+
+  Place.fromJson(Map<String, dynamic> j)
+      : id = j['id'],
+        kind = j['kind'] ?? 'area',
+        type = j['type'] ?? 'area',
+        poiKind = j['poiKind'],
+        name = j['name'] ?? '',
+        terminal = j['terminal'] ?? '',
+        label = j['label'] ?? j['name'] ?? '';
+
+  /// Area names come from our zone list (translatable); shop names are proper names.
+  String get displayName => kind == 'area' ? name.tr : name;
+
+  /// Second line: the terminal, and for a shop the area it is in.
+  String get where => kind == 'area' ? terminal : label.split(' · ').skip(1).map((s) => s.tr).join(' · ');
 }
 
 /// A lost & found zone (gate, check-in, security, ...). x/y are metres on the airport map.

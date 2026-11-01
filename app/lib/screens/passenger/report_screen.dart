@@ -6,7 +6,9 @@ import '../../app_state.dart';
 import '../../i18n.dart';
 import '../../theme.dart';
 import '../../ui.dart';
+import '../../models.dart';
 import '../../widgets.dart';
+import 'route_editor.dart';
 
 /// "What did you lose?" — the lost-item report. The backend auto-matches it immediately and
 /// again whenever staff register a new item.
@@ -20,7 +22,8 @@ class ReportScreen extends StatefulWidget {
 class _ReportScreenState extends State<ReportScreen> {
   final _description = TextEditingController();
   DateTime _travelDate = DateTime.now();
-  String? _zone;
+  List<Place> _route = [];
+  List<Place> _places = [];
   String? _category;
   XFile? _photo;
   bool _saving = false;
@@ -36,10 +39,20 @@ class _ReportScreenState extends State<ReportScreen> {
     if (d != null) setState(() => _travelDate = d);
   }
 
-  Future<void> _pickZone() async {
-    final zones = AppData.instance.zones;
-    final z = await pickFromList(context, 'Last known location', [for (final z in zones) (z.id, z.label)], selected: _zone);
-    if (z != null) setState(() => _zone = z);
+  @override
+  void initState() {
+    super.initState();
+    _loadPlaces();
+  }
+
+  Future<void> _loadPlaces() async {
+    final code = AppData.instance.airport.code;
+    try {
+      final places = await AppData.instance.placesFor(code);
+      if (mounted && AppData.instance.airport.code == code) setState(() => _places = places);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
   }
 
   Future<void> _pickCategory() async {
@@ -57,6 +70,10 @@ class _ReportScreenState extends State<ReportScreen> {
       showError(context, 'Choose an item category');
       return;
     }
+    if (_route.isEmpty) {
+      showError(context, 'Add at least one place you went through in the airport');
+      return;
+    }
     setState(() => _saving = true);
     try {
       final data = AppData.instance;
@@ -65,7 +82,7 @@ class _ReportScreenState extends State<ReportScreen> {
         airport: data.airport.code,
         description: _description.text.trim(),
         category: _category,
-        lastSeenLocation: _zone,
+        route: [for (final s in _route) s.id],
         travelDate: _travelDate,
         image: _photo,
       );
@@ -90,7 +107,6 @@ class _ReportScreenState extends State<ReportScreen> {
   Widget build(BuildContext context) {
     final p = Palette.of(context);
     final data = AppData.instance;
-    final zone = _zone == null ? null : data.zoneByName(_zone!);
     return Scaffold(
       appBar: rAppBar(context, 'Report a lost item'),
       body: PageBody(children: [
@@ -100,7 +116,7 @@ class _ReportScreenState extends State<ReportScreen> {
         ),
         Row(children: [
           Expanded(child: Eyebrow('Item & journey', color: p.primary)),
-          Text('Category required'.tr, style: TextStyle(color: p.muted, fontSize: 11)),
+          Text('Category and route required'.tr, style: TextStyle(color: p.muted, fontSize: 11)),
         ]),
         const SizedBox(height: 10),
         SelectField(
@@ -110,17 +126,17 @@ class _ReportScreenState extends State<ReportScreen> {
           onTap: () async {
             final before = data.airport.code;
             await pickAirport(context);
-            if (data.airport.code != before) setState(() => _zone = null); // zones differ per airport
+            if (data.airport.code != before) {
+              setState(() {
+                _route = []; // places differ per airport
+                _places = [];
+              });
+              _loadPlaces();
+            }
           },
         ),
         SelectField(label: 'Travel date', icon: Icons.calendar_today_outlined, value: fmtDate(_travelDate), onTap: _pickDate),
-        SelectField(
-          label: 'Last known location',
-          icon: Icons.place_outlined,
-          value: zone?.label,
-          hint: 'Where did you last have it?',
-          onTap: _pickZone,
-        ),
+        RouteEditor(stops: _route, places: _places, onChanged: (r) => setState(() => _route = r)),
         SelectField(
           label: 'Item category',
           icon: Icons.headphones_outlined,

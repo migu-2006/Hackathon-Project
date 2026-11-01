@@ -84,12 +84,18 @@ def _location_score(a: str | None, b: str | None) -> float | None:
 
 
 def score(report: dict, item: dict) -> tuple[float, dict]:
+    # The passenger listed the areas they walked through (`routeZones`): an item found
+    # anywhere else is not theirs, and one found on the route counts as a location match.
+    route = report.get("routeZones")
+    if route and item.get("zoneId") and item["zoneId"] not in route:
+        return 0.0, {"category": None, "color": None, "visual": None, "text": None, "location": 0.0}
     signals = {
         "category": _category_score(report.get("category"), item.get("category")),
         "color": _color_score(report.get("color"), item.get("color")),
         "visual": _visual_score(report.get("embedding"), item.get("embedding")),
         "text": _text_score(report.get("description"), item),
-        "location": _location_score(report.get("lastSeenLocation"), item.get("location")),
+        "location": (1.0 if item.get("zoneId") in route else None) if route
+        else _location_score(report.get("lastSeenLocation"), item.get("location")),
     }
     available = {k: v for k, v in signals.items() if v is not None}
     if not available:

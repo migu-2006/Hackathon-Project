@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 """
 
-JSON_FIELDS = {"embedding", "data"}
+JSON_FIELDS = {"embedding", "data", "route"}
 
 
 def now() -> str:
@@ -140,6 +140,7 @@ def _migrate_postgres(conn) -> None:
     conn.execute((Path(__file__).resolve().parents[1] / "supabase" / "schema.sql").read_text(encoding="utf-8"))
     conn.execute('ALTER TABLE claims ADD COLUMN IF NOT EXISTS "pickupCode" TEXT')
     conn.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS "verified" INTEGER')
+    conn.execute('ALTER TABLE lost_reports ADD COLUMN IF NOT EXISTS "route" TEXT')
     for table in ("found_items", "lost_reports"):
         conn.execute(f'UPDATE {table} SET "airport" = %s WHERE "airport" IS NULL', (config.DEFAULT_AIRPORT,))
 
@@ -148,7 +149,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     """Add columns introduced after a database was created (CREATE IF NOT EXISTS won't)."""
     for table, column in [("lost_reports", "travelDate"), ("claims", "reviewedAt"),
                           ("found_items", "airport"), ("found_items", "zoneId"), ("lost_reports", "airport"),
-                          ("found_items", "previewUrl"), ("claims", "pickupCode")]:
+                          ("found_items", "previewUrl"), ("claims", "pickupCode"), ("lost_reports", "route")]:
         existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")

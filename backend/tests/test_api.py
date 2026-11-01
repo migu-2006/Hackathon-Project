@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import tempfile
 import uuid
@@ -431,3 +432,41 @@ def test_staff_see_only_their_airport(client):
     assert cra.get("/found-items", params={"airport": "LHR", "staff": True}).status_code == 403
     assert cra.get("/airports/LHR/zones").status_code == 403
     assert admin(client).get("/found-items", params={"airport": "LHR", "staff": True}).status_code == 200
+
+
+def test_route_limits_matching_and_find_items(client):
+    desk, pax = staff(client), passenger(client)
+    places = client.get("/airports/CRA/places").json()
+    areas = {p["id"]: p for p in places if p["kind"] == "area"}
+    poi = next(p for p in places if p["kind"] == "poi")
+    assert poi["label"].startswith(poi["name"]) and "zoneIds" not in poi
+    food, arrivals = "cra-terminal-2-food", "cra-terminal-2-arrivals"
+
+    # The passenger walked through the food court and past a shop; nothing on the route yet.
+    assert pax.post("/lost-reports", data={"category": "umbrella", "airport": "CRA",
+                                           "route": json.dumps(["nowhere"])}).status_code == 422
+    r = pax.post("/lost-reports", data={"category": "umbrella", "color": "blue", "airport": "CRA",
+                                       "route": json.dumps([food, poi["id"]])}).json()["report"]
+    assert r["route"] == [food, poi["id"]] and areas[food]["label"] in r["lastSeenLocation"]
+    before = {i["id"] for i in pax.get("/found-items", params={"airport": "CRA", "onMyRoute": True}).json()}
+    assert all(i["airport"] == "CRA" for i in desk.get("/found-items", params={"airport": "CRA", "staff": True}).json()
+               if i["id"] in before) and not any(i["zoneId"] == arrivals for i in
+                                                   desk.get("/found-items", params={"airport": "CRA", "staff": True}).json()
+                                                   if i["id"] in before)
+
+    # The same umbrella found off the route doesn't match or show; found on the route it does.
+    away = desk.post("/found-items", files={"image": png()},
+                     data={"location": arrivals, "airport": "CRA", "category": "umbrella", "color": "blue"}).json()
+    near = desk.post("/found-items", files={"image": png()},
+                     data={"location": food, "airport": "CRA", "category": "umbrella", "color": "blue"}).json()
+    assert away["notifiedReports"] == [] and [n["reportId"] for n in near["notifiedReports"]] == [r["id"]]
+    matched = [m["item"]["id"] for m in pax.get(f"/lost-reports/{r['id']}/matches").json()]
+    assert near["item"]["id"] in matched and away["item"]["id"] not in matched
+    shown = [i["id"] for i in pax.get("/found-items", params={"airport": "CRA", "onMyRoute": True}).json()]
+    assert near["item"]["id"] in shown and away["item"]["id"] not in shown
+    assert all(i["locationHidden"] for i in pax.get("/found-items", params={"airport": "CRA", "onMyRoute": True}).json())
+
+    # Another passenger without a route sees nothing there; staff inventory is unaffected.
+    assert passenger(client).get("/found-items", params={"airport": "CRA", "onMyRoute": True}).json() == []
+    ids = {i["id"] for i in desk.get("/found-items", params={"airport": "CRA", "staff": True}).json()}
+    assert {near["item"]["id"], away["item"]["id"]} <= ids

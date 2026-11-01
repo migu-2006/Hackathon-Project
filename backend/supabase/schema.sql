@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS lost_reports (
     "category" TEXT,
     "color" TEXT,
     "lastSeenLocation" TEXT,
+    "route" TEXT,
     "travelDate" TEXT,
     "imageUrl" TEXT,
     "embedding" TEXT,

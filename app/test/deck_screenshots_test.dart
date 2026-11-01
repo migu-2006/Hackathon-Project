@@ -65,15 +65,24 @@ List<Map<String, dynamic>> _allItems({bool staff = false}) => [
           status: staff ? 'claimed' : 'available'),
     ];
 
+List<Map<String, dynamic>> _places() => [
+      for (final z in _zones())
+        {'id': z['id'], 'kind': 'area', 'type': 'area', 'name': z['name'], 'terminal': z['terminal'], 'label': z['label']},
+      {'id': 'poi-592-189', 'kind': 'poi', 'type': 'atm', 'poiKind': 'money', 'name': 'OTP Bank', 'terminal': 'Terminal 2', 'label': 'OTP Bank · Terminal 2 · Check-in hall'},
+      {'id': 'poi-649-181', 'kind': 'poi', 'type': 'atm', 'poiKind': 'money', 'name': 'BRD Bank', 'terminal': 'Terminal 2', 'label': 'BRD Bank · Terminal 2 · Food court'},
+    ];
+
 final _reports = [
   {
     'id': 'r7k2m9q4x1z0', 'userId': 'pax-ana', 'airport': 'CRA', 'description': 'Black phone in a gold case, left at gate 3',
-    'category': 'phone', 'color': 'black', 'lastSeenLocation': 'Terminal 2 · Departure gates', 'travelDate': '2026-10-31',
+    'category': 'phone', 'color': 'black', 'lastSeenLocation': 'Terminal 2 · Security → Terminal 2 · Departure gates', 'travelDate': '2026-10-31',
+    'route': ['cra-terminal-2-security', 'cra-terminal-2-gates'],
     'timestamp': '2026-10-31T08:05:00Z', 'status': 'matched', 'matchedItemId': '9c1e7a2b44d0',
   },
   {
     'id': 'h3p8w2d6t5n1', 'userId': 'pax-ana', 'airport': 'CRA', 'description': 'White wireless headphones',
-    'category': 'headphones', 'color': 'white', 'lastSeenLocation': 'Terminal 2 · Baggage claim', 'travelDate': '2026-10-30',
+    'category': 'headphones', 'color': 'white', 'lastSeenLocation': 'Terminal 2 · Baggage claim → Terminal 2 · Arrivals hall', 'travelDate': '2026-10-30',
+    'route': ['cra-terminal-2-baggage', 'cra-terminal-2-arrivals'],
     'timestamp': '2026-10-30T16:00:00Z', 'status': 'searching',
   },
 ];
@@ -91,8 +100,13 @@ MockClient _backend() => MockClient((req) async {
       Object? body = [];
       if (path == '/meta') {
         body = {'airport': _cra, 'zones': _zones(), 'airports': [_cra]};
+      } else if (path == '/airports/CRA/places') {
+        body = _places();
       } else if (path == '/found-items') {
-        body = _items(staff: staff);
+        final route = {'cra-terminal-2-security', 'cra-terminal-2-gates', 'cra-terminal-2-baggage', 'cra-terminal-2-arrivals'};
+        body = req.url.queryParameters['onMyRoute'] == 'true'
+            ? [for (final i in _allItems()) if (route.contains(i['zoneId'])) _items().firstWhere((x) => x['id'] == i['id'])]
+            : _items(staff: staff);
       } else if (path.startsWith('/found-items/')) {
         body = _items(staff: staff).firstWhere((i) => i['id'] == path.split('/').last);
       } else if (path == '/lost-reports' && req.method == 'GET') {
@@ -265,6 +279,15 @@ void main() {
     await _show(tester, ItemDetailsScreen(item: FoundItem.fromJson(_items()[1])));
     await _shot(tester, 'pax_item');
     await _show(tester, const ReportScreen());
+    await _tap(tester, 'Add the first place');
+    await _shot(tester, 'pax_route_picker');
+    await _tap(tester, 'Check-in hall');
+    await _tap(tester, 'Add a place');
+    await _tap(tester, 'BRD Bank');
+    await _tap(tester, 'Add a place');
+    await _tap(tester, 'Departure gates');
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -300));
+    await _settle(tester);
     await _shot(tester, 'pax_report_form');
     await _done(tester);
   });

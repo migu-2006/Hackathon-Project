@@ -137,6 +137,15 @@ class AppData extends ChangeNotifier {
 
   Future<AirportMap> mapFor(String code) async => _maps[code] ??= await Api.instance.airportMap(code);
 
+  final Map<String, List<Place>> _places = {};
+
+  /// Route places of an airport (fetched once per airport).
+  Future<List<Place>> placesFor(String code) async => _places[code] ??= await Api.instance.places(code);
+
+  /// Ids of every place on the routes of the passenger's open reports at [code]: what Find items is limited to.
+  Set<String> routeAt(String code) =>
+      {for (final r in reports) if (r.airport == code && r.status != 'recovered') ...r.route};
+
   Future<void> setThemeMode(ThemeMode mode) async {
     themeMode.value = mode;
     await (await SharedPreferences.getInstance()).setString('themeMode', mode.name);

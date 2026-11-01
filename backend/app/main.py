@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import re
 import secrets
@@ -207,6 +208,19 @@ def _available_items(airport: str) -> list[dict]:
     return storage.find("found_items", status="available", airport=airport)
 
 
+def _for_matching(report: dict) -> dict:
+    """The report plus the lost & found areas of its route, which limit what it can match."""
+    return {**report, "routeZones": config.route_zones(report.get("airport") or config.DEFAULT_AIRPORT, report.get("route"))}
+
+
+def _my_route_zones(user: dict | None, airport: str) -> set[str]:
+    """Areas a passenger walked through, from the routes of their open reports at this airport."""
+    if not user:
+        return set()
+    reports = storage.find("lost_reports", userId=user["id"], airport=airport)
+    return set().union(*[config.route_zones(airport, r.get("route")) for r in reports if r["status"] != "recovered"])
+
+
 async def _notify_match(report: dict, match: dict):
     item = match["item"]
     storage.update("lost_reports", report["id"], status="matched", matchedItemId=item["id"])
@@ -266,7 +280,7 @@ async def create_found_item(
     # Auto-match: notify every passenger at this airport still searching for something like this.
     notified = []
     for report in storage.find("lost_reports", status="searching", airport=airport):
-        s, breakdown = matching.score(report, item)
+        s, breakdown = matching.score(_for_matching(report), item)
         if s >= config.MATCH_THRESHOLD:
             await _notify_match(report, {"score": s, "breakdown": breakdown, "item": item})
             notified.append({"reportId": report["id"], "score": s})
@@ -277,8 +291,9 @@ async def create_found_item(
 @app.get("/found-items", tags=["Found Items"])
 def list_found_items(airport: str | None = None, category: str | None = None, color: str | None = None,
                      zoneId: str | None = None, status: str | None = "available", staff: bool = False,
-                     user: dict | None = Depends(optional_user)):
-    """Passengers get blurred photos; `staff=true` (inventory, staff accounts) gets the real ones."""
+                     onMyRoute: bool = False, user: dict | None = Depends(optional_user)):
+    """Passengers get blurred photos; `staff=true` (inventory, staff accounts) gets the real ones.
+    `onMyRoute=true`: only items found in the areas the passenger listed on their reports' routes."""
     if staff and not auth.is_staff(user):
         raise HTTPException(403, "Airport staff only")
     code = _airport(airport)
@@ -289,6 +304,9 @@ def list_found_items(airport: str | None = None, category: str | None = None, co
     items = storage.find("found_items", airport=code, category=category, color=color, zoneId=zoneId, status=status)
     if staff:
         return [_staff_item(i) for i in items]
+    if onMyRoute:
+        route = _my_route_zones(user, code)
+        items = [i for i in items if i.get("zoneId") in route]
     approved = _approved_item_ids(user)
     return [_public_item(i, located=i["id"] in approved) for i in items]
 
@@ -309,12 +327,19 @@ def get_found_item(item_id: str, staff: bool = False, user: dict | None = Depend
 # ---------------------------------------------------------------- Modul B: Passenger app
 
 @app.post("/search/visual", tags=["Passenger"])
-async def visual_search(image: UploadFile = File(...), limit: int = Form(10), airport: str | None = Form(None)):
-    """Reverse image search: rank available found items by similarity to the passenger photo."""
+async def visual_search(image: UploadFile = File(...), limit: int = Form(10), airport: str | None = Form(None),
+                        user: dict | None = Depends(optional_user)):
+    """Reverse image search: rank available found items by similarity to the passenger photo.
+    A signed-in passenger only searches the items found in the areas of their reports' routes."""
     img, _ = await _read_image(image)
     analysis = await asyncio.to_thread(vision.analyze, img)
     query = {"category": analysis.category, "color": analysis.color, "embedding": analysis.embedding}
-    matches = matching.rank(query, _available_items(_airport(airport)), limit=limit, min_score=0.2)
+    code = _airport(airport)
+    items = _available_items(code)
+    if user and not auth.is_staff(user):
+        route = _my_route_zones(user, code)
+        items = [i for i in items if i.get("zoneId") in route]
+    matches = matching.rank(query, items, limit=limit, min_score=0.2)
     # The only passenger view with a clear photo, and only for the best match (results are sorted by score):
     # enough to recognise your own item, without exposing every similar item someone else lost.
     return {"query": analysis.public(), "matches": [_public_match(m, reveal=i == 0) for i, m in enumerate(matches)]}
@@ -328,11 +353,13 @@ async def create_lost_report(
     category: str | None = Form(None),
     color: str | None = Form(None),
     lastSeenLocation: str | None = Form(None),
+    route: str | None = Form(None, description='Places visited, as a JSON list of ids from /airports/{IATA}/places'),
     travelDate: str | None = Form(None, description="YYYY-MM-DD"),
     image: UploadFile | None = File(None),
     user: dict = Depends(current_user),
 ):
     airport = _airport(airport)
+    stops = _parse_route(airport, route)
     imageUrl, embedding = None, None
     # "Black over-ear headphones" -> color black, so the form doesn't need a separate color field.
     color = color or next((c for c in vision.NAMED_COLORS if re.search(rf"\b{c}\b", description.lower())), None)
@@ -352,7 +379,8 @@ async def create_lost_report(
         "description": description,
         "category": category.lower(),
         "color": color.lower() if color else None,
-        "lastSeenLocation": _resolve_zone(airport, lastSeenLocation)[1],
+        "lastSeenLocation": " → ".join(_place_labels(airport, stops)) if stops else _resolve_zone(airport, lastSeenLocation)[1],
+        "route": stops or None,
         "travelDate": travelDate,
         "imageUrl": imageUrl,
         "embedding": embedding,
@@ -362,7 +390,7 @@ async def create_lost_report(
     })
 
     # The item may already be in the inventory.
-    matches = matching.rank(report, _available_items(airport), limit=5, min_score=config.MATCH_THRESHOLD)
+    matches = matching.rank(_for_matching(report), _available_items(airport), limit=5, min_score=config.MATCH_THRESHOLD)
     if matches:
         await _notify_match(report, matches[0])
         report = storage.get("lost_reports", report["id"])
@@ -382,7 +410,7 @@ def report_matches(report_id: str, limit: int = 10, user: dict = Depends(current
     if not report:
         raise HTTPException(404, "Report not found")
     require_self_or_staff(user, report["userId"])
-    matches = matching.rank(report, _available_items(report["airport"]), limit=limit, min_score=0.2)
+    matches = matching.rank(_for_matching(report), _available_items(report["airport"]), limit=limit, min_score=0.2)
     return [_public_match(m) for m in matches]
 
 
@@ -404,6 +432,33 @@ def meta(airport: str | None = None):
 def airport_map(airport: str):
     """Terminal outlines, rooms per level, gates and POIs (metres). © OpenStreetMap contributors."""
     return JSONResponse(config.airport_map(_airport(airport)), headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/airports/{airport}/places", tags=["Airports & maps"])
+def route_places(airport: str):
+    """Areas and named shops / services a passenger can add to the route of a lost report."""
+    return [{k: v for k, v in p.items() if k != "zoneIds"} for p in config.places(_airport(airport))]
+
+
+def _parse_route(airport: str, raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    try:
+        stops = json.loads(raw)
+    except ValueError:
+        stops = [s.strip() for s in raw.split(",")]
+    if not isinstance(stops, list):
+        raise HTTPException(422, "route must be a list of place ids")
+    known = {p["id"] for p in config.places(airport)}
+    unknown = [s for s in stops if s not in known]
+    if unknown:
+        raise HTTPException(422, f"Unknown place(s) at {airport}: {', '.join(map(str, unknown[:3]))}")
+    return list(dict.fromkeys(stops))  # keep the order, drop repeats
+
+
+def _place_labels(airport: str, stops: list[str]) -> list[str]:
+    by_id = {p["id"]: p for p in config.places(airport)}
+    return [by_id[s]["label"] for s in stops]
 
 
 @app.get("/airports/{airport}/zones", tags=["Airports & maps"])

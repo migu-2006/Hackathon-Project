@@ -181,6 +181,10 @@ class Api {
     );
   }
 
+  /// Areas and shops / services a passenger can put on a report's route.
+  Future<List<Place>> places(String airport) async =>
+      [for (final p in await _get('/airports/$airport/places')) Place.fromJson(p)];
+
   Future<AirportMap> airportMap(String airport) async => AirportMap.fromJson(await _get('/map/$airport'));
 
   /// Zones of an airport with the available items pinned on each.
@@ -194,6 +198,7 @@ class Api {
     String? color,
     String? status = 'available',
     bool staff = false,
+    bool onMyRoute = false, // passengers: only items found in the areas of their reports' routes
   }) async {
     final r = await _get('/found-items', {
       'airport': airport,
@@ -201,6 +206,7 @@ class Api {
       'color': color,
       'status': status,
       'staff': staff ? 'true' : null,
+      'onMyRoute': onMyRoute ? 'true' : null,
     });
     return [for (final i in r) FoundItem.fromJson(i)];
   }
@@ -222,6 +228,7 @@ class Api {
     String? category,
     String? color,
     String? lastSeenLocation,
+    List<String> route = const [],
     DateTime? travelDate,
     XFile? image,
   }) async {
@@ -232,6 +239,7 @@ class Api {
       'category': category,
       'color': color,
       'lastSeenLocation': lastSeenLocation,
+      'route': route.isEmpty ? null : jsonEncode(route),
       'travelDate': travelDate?.toIso8601String().substring(0, 10),
     }, image: image);
     return (

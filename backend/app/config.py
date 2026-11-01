@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import secrets
 from functools import lru_cache
@@ -74,6 +75,39 @@ def airport_map(code: str) -> dict:
 def zones(code: str) -> list[dict]:
     """Lost & found zones of an airport, each with a unique label like "Terminal 5 · Gate B42"."""
     return [{**z, "label": f"{z['terminal']} · {z['name']}"} for z in airport_map(code)["zones"]]
+
+@lru_cache(maxsize=None)
+def places(code: str) -> list[dict]:
+    """What a passenger can put on their route: the lost & found areas, plus the named shops and
+    services on the map. Each place lists the area(s) it belongs to (`zoneIds`): a POI belongs to
+    the nearest area, and to any other area almost as close."""
+    zs = zones(code)
+    out = [{"id": z["id"], "kind": "area", "type": "area", "name": z["name"], "terminal": z["terminal"],
+            "label": z["label"], "zoneIds": [z["id"]]} for z in zs]
+    if not zs:
+        return out
+    seen = set()
+    for p in airport_map(code)["pois"]:
+        if not p.get("name"):
+            continue
+        dist = sorted(((math.hypot(p["x"] - z["x"], p["y"] - z["y"]), z) for z in zs), key=lambda t: t[0])
+        nearest = dist[0][0]
+        near = [z for d, z in dist if d <= max(nearest * 1.2, nearest + 25)]
+        pid = f"poi-{round(p['x'])}-{round(p['y'])}"
+        if pid in seen:
+            continue
+        seen.add(pid)
+        out.append({"id": pid, "kind": "poi", "type": p.get("type") or p.get("kind") or "poi", "poiKind": p.get("kind"),
+                    "name": p["name"], "terminal": near[0]["terminal"],
+                    "label": f"{p['name']} · {near[0]['label']}", "zoneIds": [z["id"] for z in near]})
+    return out
+
+
+def route_zones(code: str, stops: list[str] | None) -> set[str]:
+    """Lost & found areas covered by a passenger's route (unknown stops are ignored)."""
+    by_id = {p["id"]: p for p in places(code)}
+    return {z for s in stops or [] if s in by_id for z in by_id[s]["zoneIds"]}
+
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)

@@ -691,4 +691,34 @@ const translations = <String, (String, String)>{
   'Shown once your claim is approved': ('Afișat după aprobarea revendicării dumneavoastră', 'Se muestra cuando se apruebe su reclamación'),
   'Where it was found': ('Unde a fost găsit', 'Dónde se encontró'),
   '{airport} airport': ('Aeroportul {airport}', 'Aeropuerto de {airport}'),
+
+  // Lost report route: the areas and shops the passenger went through.
+  'Your route in the airport': ('Traseul dumneavoastră în aeroport', 'Su recorrido en el aeropuerto'),
+  'Add every area, shop or café you went through, in order. We only look for your item along this route.':
+      ('Adăugați, în ordine, fiecare zonă, magazin sau cafenea prin care ați trecut. Căutăm obiectul doar de-a lungul acestui traseu.',
+       'Añada, en orden, cada zona, tienda o cafetería por la que pasó. Solo buscamos su objeto a lo largo de este recorrido.'),
+  'Add the first place': ('Adăugați primul loc', 'Añadir el primer lugar'),
+  'Add a place': ('Adăugați un loc', 'Añadir un lugar'),
+  'Remove': ('Elimină', 'Quitar'),
+  'Where did you go?': ('Pe unde ați fost?', '¿Por dónde pasó?'),
+  'Search gates, areas, shops, cafés…': ('Căutați porți, zone, magazine, cafenele…', 'Buscar puertas, zonas, tiendas, cafeterías…'),
+  'Areas': ('Zone', 'Zonas'),
+  'Shops, cafés & services': ('Magazine, cafenele și servicii', 'Tiendas, cafeterías y servicios'),
+  'No place matches your search.': ('Niciun loc nu corespunde căutării.', 'Ningún lugar coincide con su búsqueda.'),
+  'Add at least one place you went through in the airport': ('Adăugați cel puțin un loc prin care ați trecut în aeroport', 'Añada al menos un lugar por el que pasó en el aeropuerto'),
+  'Category and route required': ('Categoria și traseul sunt obligatorii', 'Categoría y recorrido obligatorios'),
+  'Showing items found along your route ({n} places)':
+      ('Obiecte găsite de-a lungul traseului ({n} loc)|Obiecte găsite de-a lungul traseului ({n} locuri)|Obiecte găsite de-a lungul traseului ({n} de locuri)',
+       'Objetos encontrados en su recorrido ({n} lugar)|Objetos encontrados en su recorrido ({n} lugares)'),
+  'Tell us where you went': ('Spuneți-ne pe unde ați fost', 'Díganos por dónde pasó'),
+  "Report your lost item and add the areas and shops you went through. We'll show you the items found along that route.":
+      ('Raportați obiectul pierdut și adăugați zonele și magazinele prin care ați trecut. Vă vom arăta obiectele găsite de-a lungul acelui traseu.',
+       'Informe de su objeto perdido y añada las zonas y tiendas por las que pasó. Le mostraremos los objetos encontrados en ese recorrido.'),
+  'Nothing has been found along your route yet. We will notify you when something turns up.':
+      ('Încă nu s-a găsit nimic de-a lungul traseului. Vă anunțăm când apare ceva.',
+       'Aún no se ha encontrado nada en su recorrido. Le avisaremos cuando aparezca algo.'),
+  'Check-in hall': ('Hala de check-in', 'Vestíbulo de facturación'),
+  'Baggage claim': ('Banda de bagaje', 'Recogida de equipajes'),
+  'Arrivals hall': ('Sala de sosiri', 'Vestíbulo de llegadas'),
+  'Departure gates': ('Porți de îmbarcare', 'Puertas de embarque'),
 };
