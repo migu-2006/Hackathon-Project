@@ -165,10 +165,15 @@ class AppData extends ChangeNotifier {
       await Future.wait([
         for (final rep in reports.where((r) => r.status != 'recovered'))
           api.reportMatches(rep.id).then((m) => matchesByReport[rep.id] = m),
-        for (final c in claims.where((c) => !itemCache.containsKey(c.itemId))) _cacheItem(c.itemId),
+        // Approved claims: fetch again, the server now includes where the item was found.
+        for (final c in claims.where((c) =>
+            !itemCache.containsKey(c.itemId) ||
+            (itemCache[c.itemId]!.locationHidden && (c.status == 'ready_for_pickup' || c.status == 'recovered'))))
+          _cacheItem(c.itemId),
       ]);
       for (final list in matchesByReport.values) {
         for (final m in list) {
+          if (itemCache[m.item.id]?.locationHidden == false) continue; // keep the copy with the location
           itemCache[m.item.id] = m.item;
         }
       }

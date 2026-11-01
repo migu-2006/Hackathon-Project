@@ -269,8 +269,14 @@ def test_full_flow(client):
     assert r.json()["notifiedReports"][0]["reportId"] == report_id
     assert pax.get(f"/users/{pax.user['id']}/notifications").json()[0]["data"]["itemId"] == item["id"]
 
-    zones = {z["id"]: z for z in client.get("/airports/LHR/zones").json()}
+    zones = {z["id"]: z for z in desk.get("/airports/LHR/zones").json()}
     assert zones[gate["id"]]["count"] >= 1
+    # Passengers don't see where items were found until their claim is approved.
+    hidden = pax.get(f"/found-items/{item['id']}").json()
+    assert hidden["locationHidden"] is True and hidden["location"] == "" and hidden["zoneId"] is None
+    assert all(not z["items"] for z in pax.get("/airports/LHR/zones").json())
+    assert pax.get("/found-items", params={"zoneId": gate["id"]}).status_code == 403
+    assert gate["label"] not in pax.get(f"/users/{pax.user['id']}/notifications").json()[0]["body"]
 
     # Visual search finds it.
     r = client.post("/search/visual", files={"image": png()})
@@ -287,6 +293,12 @@ def test_full_flow(client):
     assert review["item"]["secretDetail"] == "Lufthansa sticker"
     assert review["claim"]["answer"] == "Lufthansa sticker on the front"
     desk.post(f"/staff/claims/{claim['id']}/review", json={"approved": True})
+    # Approved: this passenger now sees where their item was found, and only that one.
+    shown = pax.get(f"/found-items/{item['id']}").json()
+    assert shown["locationHidden"] is False and shown["zoneId"] == gate["id"] and shown["location"] == gate["label"]
+    pins = [i["id"] for z in pax.get("/airports/LHR/zones").json() for i in z["items"]]
+    assert pins == [item["id"]]
+    assert all(i["locationHidden"] for i in passenger(client).get("/found-items").json())
     approved = pax.get("/claims").json()[0]
     token, code = approved["token"], approved["pickupCode"]
     qr = pax.get(f"/claims/{claim['id']}/qr")
@@ -351,8 +363,7 @@ def test_photos_are_blurred_until_reverse_image_search(client):
     # Every passenger listing shows only the blurred preview, never the real file.
     listed = next(i for i in client.get("/found-items").json() if i["id"] == staff_view["id"])
     single = client.get(f"/found-items/{staff_view['id']}").json()
-    pinned = next(i for z in client.get("/airports/LHR/zones").json() for i in z["items"] if i["id"] == staff_view["id"])
-    for view in (listed, single, pinned):
+    for view in (listed, single):
         assert view["photoHidden"] is True
         assert view["imageUrl"].startswith("/images/preview_") and view["imageUrl"] != real
     assert client.get(listed["imageUrl"]).status_code == 200
@@ -400,3 +411,23 @@ def test_developer_reset(client):
 
     client.post("/dev/reset", json={"includeItems": True}, headers=key)
     assert client.get("/found-items").json() == []
+
+
+def test_staff_see_only_their_airport(client):
+    email = f"cra-{uuid.uuid4().hex[:6]}@skyfindr.app"
+    assert admin(client).post("/admin/users", json={"email": email, "password": "desk-pass", "name": "CRA desk",
+                                                    "role": "staff", "airport": "CRA"}).status_code == 200
+    cra = login(client, email, "desk-pass", role="staff")
+    zone = client.get("/meta", params={"airport": "CRA"}).json()["zones"][0]
+    item = cra.post("/found-items", files={"image": png()}, data={"location": zone["id"], "airport": "CRA"}).json()["item"]
+
+    # Inventory and map of their own airport, with the exact location of every item.
+    listed = next(i for i in cra.get("/found-items", params={"airport": "CRA", "staff": True}).json() if i["id"] == item["id"])
+    assert listed["zoneId"] == zone["id"] and listed["location"] == zone["label"]
+    pins = {i["id"] for z in cra.get("/airports/CRA/zones").json() for i in z["items"]}
+    assert item["id"] in pins
+
+    # Another airport's inventory is off limits; administrators see every airport.
+    assert cra.get("/found-items", params={"airport": "LHR", "staff": True}).status_code == 403
+    assert cra.get("/airports/LHR/zones").status_code == 403
+    assert admin(client).get("/found-items", params={"airport": "LHR", "staff": True}).status_code == 200

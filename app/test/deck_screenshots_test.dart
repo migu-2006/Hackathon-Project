@@ -46,7 +46,13 @@ Map<String, dynamic> _item(String id, String category, String color, String hex,
       'secretDetail': ?secret,
     };
 
+/// Passengers only see where their own approved item (the phone) was found.
 List<Map<String, dynamic>> _items({bool staff = false}) => [
+      for (final i in _allItems(staff: staff))
+        staff || i['id'] == '9c1e7a2b44d0' ? i : {...i, 'location': '', 'zoneId': null, 'locationHidden': true},
+    ];
+
+List<Map<String, dynamic>> _allItems({bool staff = false}) => [
       _item('9c1e7a2b44d0', 'phone', 'black', '#1f1f22', 'gates', 'Departure gates', '2026-10-31T07:40:00Z',
           phone: true, hidden: !staff, text: 'gold case', secret: staff ? 'Gold bumper case, cracked corner' : null),
       _item('a1b2c3d4e5f6', 'backpack', 'black', '#222222', 'security', 'Security', '2026-10-31T06:55:00Z',

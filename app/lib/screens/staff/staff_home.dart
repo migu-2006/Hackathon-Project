@@ -81,14 +81,18 @@ class _StaffHomeState extends State<StaffHome> {
             listenable: AppData.instance,
             builder: (context, _) => Padding(
               padding: const EdgeInsets.only(right: 12),
+              // Staff work at the airport their administrator assigned; administrators can switch.
               child: FilterPill(
                 label: '${AppData.instance.airport.code} · ${AppData.instance.airport.short}',
                 active: true,
-                onTap: () async {
-                  await pickAirport(context);
-                  _inventoryKey.currentState?.refresh();
-                  _attemptsKey.currentState?.refresh();
-                },
+                trailingIcon: AppData.instance.user?.airport != null ? Icons.lock_outline : Icons.keyboard_arrow_down,
+                onTap: AppData.instance.user?.airport != null
+                    ? null
+                    : () async {
+                        await pickAirport(context);
+                        _inventoryKey.currentState?.refresh();
+                        _attemptsKey.currentState?.refresh();
+                      },
               ),
             ),
           ),

@@ -25,7 +25,6 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
   late Future<List<FoundItem>> _items = Api.instance.foundItems(airport: _airport);
   DateTimeRange? _dates;
   String? _category;
-  String? _terminal;
   bool _newestFirst = true;
 
   @override
@@ -46,7 +45,6 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
     if (code == _airport || !mounted) return;
     setState(() {
       _airport = code;
-      _terminal = null;
       _items = Api.instance.foundItems(airport: code);
     });
   }
@@ -63,7 +61,6 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
     final q = _search.text.trim().toLowerCase();
     final out = items.where((i) {
       if (_category != null && i.category != _category) return false;
-      if (_terminal != null && data.zoneByName(i.location)?.terminal != _terminal) return false;
       if (_dates != null) {
         final d = DateTime(i.timestamp.year, i.timestamp.month, i.timestamp.day);
         if (d.isBefore(_dates!.start) || d.isAfter(_dates!.end)) return false;
@@ -78,7 +75,7 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
     return out;
   }
 
-  int get _activeFilters => [_dates, _category, _terminal].where((f) => f != null).length;
+  int get _activeFilters => [_dates, _category].where((f) => f != null).length;
 
   Future<void> _pickDates() async {
     final now = DateTime.now();
@@ -101,17 +98,6 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
     if (c != null) setState(() => _category = c.isEmpty ? null : c);
   }
 
-  Future<void> _pickTerminal() async {
-    final terminals = {for (final z in AppData.instance.zones) z.terminal}.toList()..sort();
-    final t = await pickFromList<String>(
-      context,
-      'Terminal',
-      [('', 'All terminals'), for (final t in terminals) (t, t)],
-      selected: _terminal ?? '',
-    );
-    if (t != null) setState(() => _terminal = t.isEmpty ? null : t);
-  }
-
   /// Reverse image search; matches it finds show their clear photo here afterwards.
   Future<void> _photoSearch() async {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PhotoSearchScreen()));
@@ -121,7 +107,6 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
   void _clearFilters() => setState(() {
         _dates = null;
         _category = null;
-        _terminal = null;
       });
 
   @override
@@ -176,7 +161,6 @@ class _FoundItemsScreenState extends State<FoundItemsScreen> {
             const SizedBox(height: 8),
             Wrap(spacing: 8, children: [
               FilterPill(label: _category == null ? 'All categories' : capitalize(_category!), active: _category != null, onTap: _pickCategory),
-              FilterPill(label: _terminal ?? 'All terminals', active: _terminal != null, onTap: _pickTerminal),
             ]),
             const SizedBox(height: 10),
             SectionTitle(

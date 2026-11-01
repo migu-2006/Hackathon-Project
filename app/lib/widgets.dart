@@ -170,7 +170,8 @@ class ItemCard extends StatelessWidget {
   final double? score;
   final Widget? trailing;
   final VoidCallback? onTap;
-  const ItemCard({super.key, required this.item, this.score, this.trailing, this.onTap});
+  final Widget? footer; // under the details, full width (e.g. a button)
+  const ItemCard({super.key, required this.item, this.score, this.trailing, this.onTap, this.footer});
 
   @override
   Widget build(BuildContext context) {
@@ -181,7 +182,8 @@ class ItemCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Row(children: [
+          child: Column(children: [
+          Row(children: [
             ItemThumb(item),
             const SizedBox(width: 12),
             Expanded(
@@ -214,6 +216,8 @@ class ItemCard extends StatelessWidget {
             ),
             if (score != null) ScoreBadge(score!),
             ?trailing,
+          ]),
+          if (footer != null) ...[const SizedBox(height: 8), footer!],
           ]),
         ),
       ),

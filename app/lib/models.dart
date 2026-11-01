@@ -22,7 +22,8 @@ class FoundItem {
   final String text;
   final String airport;
   final String? zoneId;
-  final String location; // zone label, e.g. "Terminal 5 · Gate B42"
+  final String location; // zone label, e.g. "Terminal 5 · Gate B42"; empty when locationHidden
+  final bool locationHidden; // passengers: hidden until staff approve their claim on this item
   final String? notes;
   final String? secretDetail; // only present in the staff scan view
   final DateTime timestamp;
@@ -40,6 +41,7 @@ class FoundItem {
         colorHex = j['colorHex'] ?? '#888888',
         text = j['text'] ?? '',
         location = j['location'] ?? '',
+        locationHidden = j['locationHidden'] ?? false,
         notes = j['notes'],
         secretDetail = j['secretDetail'],
         timestamp = DateTime.parse(j['timestamp']).toLocal(),

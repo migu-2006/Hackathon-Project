@@ -141,14 +141,33 @@ def _preview_url(item: dict) -> str | None:
     return url
 
 
-def _public_item(item: dict, reveal: bool = False) -> dict:
+def _public_item(item: dict, reveal: bool = False, located: bool = False) -> dict:
     """Passenger view: no hidden detail, and only the blurred photo unless the passenger
-    found this item through a reverse image search (`reveal`)."""
+    found this item through a reverse image search (`reveal`). Where the item was found stays
+    hidden until staff approve this passenger's claim on it (`located`)."""
     out = {k: v for k, v in item.items() if k not in ("embedding", "secretDetail", "previewUrl")}
     if not reveal:
         out["imageUrl"] = _preview_url(item)
     out["photoHidden"] = not reveal
+    if not located:
+        out |= {"location": "", "zoneId": None}
+    out["locationHidden"] = not located
     return out
+
+
+def _approved_item_ids(user: dict | None) -> set[str]:
+    """Items whose claim staff approved for this passenger: the only ones they see the location of."""
+    if not user:
+        return set()
+    return {c["itemId"] for c in storage.find("claims", userId=user["id"])
+            if c["status"] in ("ready_for_pickup", "recovered")}
+
+
+def _check_staff_airport(user: dict, airport: str):
+    """Staff work on the airport an administrator assigned them (administrators: any airport)."""
+    home = user.get("airport")
+    if user["role"] == "staff" and home and home.upper() != airport:
+        raise HTTPException(403, f"Your account works at {home.upper()}. Ask an administrator to change it.")
 
 
 def _staff_item(item: dict) -> dict:
@@ -194,7 +213,8 @@ async def _notify_match(report: dict, match: dict):
     await notifier.send(
         report["userId"],
         "Possible match found!",
-        f"A {item['color']} {item['category']} was found at {item['location']}.",
+        f"A {item['color']} {item['category']} was handed in at "
+        f"{config.AIRPORTS.get(item.get('airport') or '', {}).get('name', 'the airport')}.",
         {"reportId": report["id"], "itemId": item["id"], "score": match["score"]},
     )
 
@@ -261,9 +281,16 @@ def list_found_items(airport: str | None = None, category: str | None = None, co
     """Passengers get blurred photos; `staff=true` (inventory, staff accounts) gets the real ones."""
     if staff and not auth.is_staff(user):
         raise HTTPException(403, "Airport staff only")
-    items = storage.find("found_items", airport=_airport(airport), category=category, color=color,
-                         zoneId=zoneId, status=status)
-    return [_staff_item(i) if staff else _public_item(i) for i in items]
+    code = _airport(airport)
+    if staff:
+        _check_staff_airport(user, code)
+    elif zoneId:
+        raise HTTPException(403, "Item locations are shared once your claim is approved")
+    items = storage.find("found_items", airport=code, category=category, color=color, zoneId=zoneId, status=status)
+    if staff:
+        return [_staff_item(i) for i in items]
+    approved = _approved_item_ids(user)
+    return [_public_item(i, located=i["id"] in approved) for i in items]
 
 
 @app.get("/found-items/{item_id}", tags=["Found Items"])
@@ -273,7 +300,10 @@ def get_found_item(item_id: str, staff: bool = False, user: dict | None = Depend
     item = storage.get("found_items", item_id)
     if not item:
         raise HTTPException(404, "Item not found")
-    return _staff_item(item) if staff else _public_item(item)
+    if staff:
+        _check_staff_airport(user, item.get("airport") or config.DEFAULT_AIRPORT)
+        return _staff_item(item)
+    return _public_item(item, located=item_id in _approved_item_ids(user))
 
 
 # ---------------------------------------------------------------- Modul B: Passenger app
@@ -377,13 +407,20 @@ def airport_map(airport: str):
 
 
 @app.get("/airports/{airport}/zones", tags=["Airports & maps"])
-def map_zones(airport: str | None = None):
-    """Zones with the available found items pinned on each."""
+def map_zones(airport: str | None = None, user: dict | None = Depends(optional_user)):
+    """Zones with found items pinned on each. Staff see the whole inventory of their airport;
+    a passenger only sees the items whose claim staff approved for them."""
     code = _airport(airport)
-    items = _available_items(code)
+    if auth.is_staff(user):
+        _check_staff_airport(user, code)
+        items, view = _available_items(code), _staff_item
+    else:
+        approved = _approved_item_ids(user)
+        items = [i for i in storage.find("found_items", airport=code) if i["id"] in approved and i["status"] != "disposed"]
+        view = lambda i: _public_item(i, located=True)  # noqa: E731
     out = []
     for zone in config.zones(code):
-        here = [_public_item(i) for i in items if i.get("zoneId") == zone["id"] or i["location"] == zone["label"]]
+        here = [view(i) for i in items if i.get("zoneId") == zone["id"] or i["location"] == zone["label"]]
         out.append({**zone, "count": len(here), "items": here})
     return out
 

@@ -5,6 +5,7 @@ import '../../app_state.dart';
 import '../../models.dart';
 import '../../ui.dart';
 import '../../widgets.dart';
+import '../passenger/map_screen.dart';
 
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
@@ -83,6 +84,7 @@ class InventoryScreenState extends State<InventoryScreen> {
                   trailing: items[i].id == _highlight
                       ? const RBadge('New', icon: Icons.check_circle, kind: BadgeKind.success)
                       : null,
+                  footer: _MapButton(item: items[i]),
                 ),
               );
             },
@@ -91,4 +93,25 @@ class InventoryScreenState extends State<InventoryScreen> {
       ),
     ]);
   }
+}
+
+/// Opens the airport map zoomed on the zone where the item was found.
+class _MapButton extends StatelessWidget {
+  final FoundItem item;
+  const _MapButton({required this.item});
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          // Items registered with a free-text location have no zone to point at.
+          onPressed: item.zoneId == null
+              ? null
+              : () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => AirportMapScreen(airport: item.airport, focusZoneId: item.zoneId),
+                  )),
+          icon: const Icon(Icons.map_outlined, size: 18),
+          label: Text(item.zoneId == null ? 'No map position for this location' : 'See location on map'),
+        ),
+      );
 }

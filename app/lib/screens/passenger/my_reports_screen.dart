@@ -7,6 +7,7 @@ import '../../models.dart';
 import '../../theme.dart';
 import '../../ui.dart';
 import 'item_details_screen.dart';
+import 'map_screen.dart';
 import 'report_screen.dart';
 
 class StageBadge extends StatelessWidget {
@@ -435,11 +436,24 @@ class PickupPassScreen extends StatelessWidget {
           ]),
         ),
         SurfaceCard(
-          child: InfoRow(
-            icon: Icons.place_outlined,
-            label: 'Collection location',
-            value: '${data.airportByCode(report.airport).short} · ${data.airportByCode(report.airport).desk}',
-          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // Approved: the passenger may now see where their item was found.
+            if (item != null && !item!.locationHidden && item!.location.isNotEmpty)
+              InfoRow(icon: Icons.travel_explore, label: 'Where it was found', value: item!.location),
+            InfoRow(
+              icon: Icons.place_outlined,
+              label: 'Collection location',
+              value: '${data.airportByCode(report.airport).short} · ${data.airportByCode(report.airport).desk}',
+            ),
+            if (item?.zoneId != null && !item!.locationHidden)
+              TextButton.icon(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => AirportMapScreen(airport: item!.airport, focusZoneId: item!.zoneId),
+                )),
+                icon: const Icon(Icons.map_outlined, size: 16),
+                label: const Text('View on map', style: TextStyle(fontSize: 12.5)),
+              ),
+          ]),
         ),
         SurfaceCard(
           color: p.tint,

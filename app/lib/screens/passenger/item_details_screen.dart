@@ -67,7 +67,13 @@ class ItemDetailsScreen extends StatelessWidget {
             child: Column(
               children: [
                 InfoRow(icon: Icons.calendar_today_outlined, label: 'Date found', value: fmtDate(item.timestamp)),
-                InfoRow(icon: Icons.place_outlined, label: 'Found near', value: '${airport.short} · ${item.location}'),
+                InfoRow(
+                  icon: Icons.place_outlined,
+                  label: 'Found near',
+                  value: item.locationHidden
+                      ? 'Shown once your claim is approved'
+                      : '${airport.short} · ${item.location}',
+                ),
                 InfoRow(
                   icon: Icons.inventory_2_outlined,
                   label: 'Safely held by',
