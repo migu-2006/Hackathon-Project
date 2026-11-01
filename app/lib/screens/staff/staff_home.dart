@@ -14,6 +14,7 @@ import '../account.dart';
 import '../chat_screen.dart';
 import 'chats_screen.dart';
 import 'attempts_screen.dart';
+import 'baggage_desk_screen.dart';
 import 'intake_screen.dart';
 import 'inventory_screen.dart';
 import 'pickup_screen.dart';
@@ -31,6 +32,7 @@ class _StaffHomeState extends State<StaffHome> {
   final _inventoryKey = GlobalKey<InventoryScreenState>();
   final _reviewKey = GlobalKey<ReviewScreenState>();
   final _attemptsKey = GlobalKey<AttemptsScreenState>();
+  final _bagsKey = GlobalKey<BaggageDeskScreenState>();
 
   final _chatUnread = ValueNotifier(0);
   WebSocketChannel? _channel;
@@ -66,11 +68,14 @@ class _StaffHomeState extends State<StaffHome> {
     if (user == null) return;
     try {
       _channel = Api.instance.notificationStream(user.id);
+      // A failed connection also ends the stream (onDone reconnects); don't leave the error unhandled.
+      _channel!.ready.ignore();
       _sub = _channel!.stream.listen(
         (msg) {
           final data = jsonDecode(msg) as Map<String, dynamic>;
           if (data['type'] == 'handed_in') _onHandedIn(data);
           if (data['type'] == 'chat') _onChat(data);
+          if (data['type'] == 'baggage') _bagsKey.currentState?.refresh();
         },
         onDone: _scheduleReconnect,
         onError: (_) => _scheduleReconnect(),
@@ -187,8 +192,9 @@ class _StaffHomeState extends State<StaffHome> {
       ReviewScreen(key: _reviewKey),
       const PickupScreen(),
       AttemptsScreen(key: _attemptsKey),
+      BaggageDeskScreen(key: _bagsKey),
     ];
-    const titles = ['Smart Intake', 'Inventory', 'Ownership review', 'Pick-up desk', 'Claim log'];
+    const titles = ['Smart Intake', 'Inventory', 'Ownership review', 'Pick-up desk', 'Claim log', 'Baggage'];
     return Scaffold(
       appBar: AppBar(
         title: Text('Staff · {page}'.trf({'page': titles[_tab].tr})),
@@ -216,6 +222,7 @@ class _StaffHomeState extends State<StaffHome> {
           if (_tab == 1) RefreshButton(onRefresh: () => _inventoryKey.currentState?.refresh()),
           if (_tab == 2) RefreshButton(onRefresh: () => _reviewKey.currentState?.refresh()),
           if (_tab == 4) RefreshButton(onRefresh: () => _attemptsKey.currentState?.refresh()),
+          if (_tab == 5) RefreshButton(onRefresh: () async => _bagsKey.currentState?.refresh()),
           ValueListenableBuilder<int>(
             valueListenable: _chatUnread,
             builder: (_, unread, _) => IconButton(
@@ -236,6 +243,7 @@ class _StaffHomeState extends State<StaffHome> {
           if (i == 1) _inventoryKey.currentState?.refresh();
           if (i == 2) _reviewKey.currentState?.refresh();
           if (i == 4) _attemptsKey.currentState?.refresh();
+          if (i == 5) _bagsKey.currentState?.refresh();
         },
         destinations: [
           NavigationDestination(icon: const Icon(Icons.add_a_photo_outlined), selectedIcon: const Icon(Icons.add_a_photo), label: 'Intake'.tr),
@@ -243,6 +251,7 @@ class _StaffHomeState extends State<StaffHome> {
           NavigationDestination(icon: const Icon(Icons.fact_check_outlined), selectedIcon: const Icon(Icons.fact_check), label: 'Review'.tr),
           NavigationDestination(icon: const Icon(Icons.qr_code_scanner), label: 'Pick-up'.tr),
           NavigationDestination(icon: const Icon(Icons.history), label: 'Log'.tr),
+          NavigationDestination(icon: const Icon(Icons.luggage_outlined), selectedIcon: const Icon(Icons.luggage), label: 'Bags'.tr),
         ],
       ),
     );

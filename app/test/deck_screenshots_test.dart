@@ -15,10 +15,12 @@ import 'package:lost_found_app/api.dart';
 import 'package:lost_found_app/app_state.dart';
 import 'package:lost_found_app/models.dart';
 import 'package:lost_found_app/screens/chat_screen.dart';
+import 'package:lost_found_app/screens/passenger/baggage_screens.dart';
 import 'package:lost_found_app/screens/passenger/item_details_screen.dart';
 import 'package:lost_found_app/screens/passenger/my_reports_screen.dart';
 import 'package:lost_found_app/screens/passenger/report_screen.dart';
 import 'package:lost_found_app/screens/passenger/shell.dart';
+import 'package:lost_found_app/screens/staff/baggage_desk_screen.dart';
 import 'package:lost_found_app/screens/staff/chats_screen.dart';
 import 'package:lost_found_app/screens/staff/pickup_screen.dart';
 import 'package:lost_found_app/screens/staff/staff_home.dart';
@@ -112,6 +114,34 @@ Map<String, dynamic> _thread({bool staff = false, bool withMessages = false}) =>
       if (withMessages) 'messages': _messages,
     };
 
+Map<String, dynamic> _ev(String kind, String time, {String? station, String? flight, String? eta, String? note}) => {
+      'kind': kind, 'station': station, 'flight': flight, 'eta': eta, 'note': note, 'byName': 'Maria Ionescu',
+      'timestamp': '2026-10-31T$time:00Z',
+    };
+
+final _onHand = {
+  'id': 'bag000000001', 'airport': 'CRA', 'tagNumber': '0281123456', 'flight': 'RO644', 'bagType': 'suitcase',
+  'color': 'red', 'brand': 'Samsonite', 'nameOnTag': 'Ana Pop', 'location': 'Terminal 2 · Baggage claim', 'imageUrl': '',
+  'status': 'matched', 'reportId': 'bg7k2m9q4x1z', 'timestamp': '2026-10-31T18:52:00Z',
+};
+
+Map<String, dynamic> _bagFile({bool staff = false, String status = 'out_for_delivery'}) => {
+      'id': 'bg7k2m9q4x1z', 'ref': 'CRA-BG-00042', 'userId': 'pax-ana', 'airport': 'CRA', 'kind': 'delayed',
+      'flight': 'RO642', 'flightDate': '2026-10-31', 'tagNumbers': ['0281123456'], 'bagType': 'suitcase', 'color': 'red',
+      'brand': 'Samsonite', 'nameOnTag': 'Ana Pop', 'marks': 'Yellow ribbon on the handle', 'contents': 'Grey suit, camera charger',
+      'deliveryMethod': 'deliver', 'deliveryAddress': 'Hotel Ramada, room 214, Calea București 1, Craiova',
+      'deliveryPhone': '+40 712 345 678', 'deliveryWindow': 'after 19:00', 'status': status, 'matchedBagId': 'bag000000001',
+      'handoverCode': status == 'out_for_delivery' ? 'B7K4QX' : null, 'timestamp': '2026-10-31T11:20:00Z',
+      'events': [
+        _ev('reported', '11:20'),
+        _ev('located', '12:05', station: 'OTP', note: 'Missed the connection in Bucharest'),
+        _ev('forwarded', '15:30', flight: 'RO644', eta: '18:40'),
+        _ev('found_here', '18:52', station: 'CRA', note: 'Tag 0281123456 · Terminal 2 · Baggage claim'),
+        if (status == 'out_for_delivery') _ev('out_for_delivery', '19:10'),
+      ],
+      if (staff) ...{'bag': _onHand, 'suggestions': [], 'passengerName': 'Ana Pop', 'passengerEmail': 'ana.pop@gmail.com'},
+    };
+
 final _claim = {
   'id': 'c7f3a91c2d4e5', 'token': '7f3a91c2d4e5', 'pickupCode': 'K7M2QX', 'reportId': 'r7k2m9q4x1z0', 'itemId': '9c1e7a2b44d0',
   'question': 'Describe something distinctive about the item (case, stickers, scratches, engravings).',
@@ -127,6 +157,30 @@ MockClient _backend() => MockClient((req) async {
         body = {'airport': _cra, 'zones': _zones(), 'airports': [_cra]};
       } else if (path == '/airports/CRA/places') {
         body = _places();
+      } else if (path == '/baggage-reports') {
+        body = staff
+            ? [
+                _bagFile(staff: true, status: 'arrived'),
+                {
+                  ..._bagFile(staff: true, status: 'reported'), 'id': 'bg2', 'ref': 'CRA-BG-00043', 'bagType': 'backpack',
+                  'color': 'black', 'tagNumbers': ['0064998877'], 'flight': 'W63121', 'timestamp': '2026-10-30T09:00:00Z',
+                  'events': [_ev('reported', '09:00')],
+                },
+                {
+                  ..._bagFile(staff: true, status: 'forwarded'), 'id': 'bg3', 'ref': 'CRA-BG-00041', 'bagType': 'stroller',
+                  'color': 'gray', 'kind': 'damaged', 'tagNumbers': ['0281555000'],
+                },
+              ]
+            : [_bagFile()];
+      } else if (path.startsWith('/baggage-reports/')) {
+        body = _bagFile(staff: staff, status: 'arrived');
+      } else if (path == '/baggage/on-hand') {
+        body = [
+          {..._onHand, 'id': 'bag2', 'tagNumber': null, 'bagType': 'soft_bag', 'color': 'navy', 'nameOnTag': null, 'status': 'on_hand', 'flight': 'RO642'},
+          {..._onHand, 'id': 'bag3', 'tagNumber': '0999654321', 'bagType': 'sports', 'color': 'black', 'nameOnTag': 'M. Weber', 'status': 'on_hand'},
+        ];
+      } else if (path.startsWith('/baggage/handover/')) {
+        body = _bagFile(staff: true);
       } else if (path == '/chats') {
         body = staff
             ? [
@@ -297,6 +351,11 @@ void main() {
     await _shot(tester, 'pax_home');
     await _tap(tester, 'Find items');
     await _shot(tester, 'pax_found');
+    await _tap(tester, 'My reports');
+    await _shot(tester, 'pax_bag_case');
+    await tester.drag(find.textContaining('File CRA-BG').first, const Offset(0, -700));
+    await _settle(tester);
+    await _shot(tester, 'pax_bag_case_2');
     await _tap(tester, 'I found it');
     await _shot(tester, 'pax_hand_in');
     await tester.drag(find.byType(Scrollable).at(1), const Offset(0, -900));
@@ -318,6 +377,13 @@ void main() {
       ),
     );
     await _shot(tester, 'pax_pass');
+    await _show(tester, BagPassScreen(report: BaggageReport.fromJson(_bagFile())));
+    await _shot(tester, 'pax_bag_pass');
+    await _show(tester, const BaggageReportScreen());
+    await _shot(tester, 'pax_bag_form');
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
+    await _settle(tester);
+    await _shot(tester, 'pax_bag_form_2');
     await _show(tester, const ChatScreen(reportId: 'r7k2m9q4x1z0'));
     await _shot(tester, 'pax_chat');
     await _done(tester);
@@ -362,8 +428,21 @@ void main() {
     await _shot(tester, 'staff_review');
     await _tap(tester, 'Pick-up');
     await _shot(tester, 'staff_pickup');
+    await _tap(tester, 'Bags');
+    await _shot(tester, 'staff_bags');
+    await _tap(tester, 'On hand (2)');
+    await _shot(tester, 'staff_bags_onhand');
     await _show(tester, const ClaimReviewScreen(token: '7f3a91c2d4e5'));
     await _shot(tester, 'staff_scan');
+    await _show(tester, const BagFileScreen(reportId: 'bg7k2m9q4x1z'));
+    await _shot(tester, 'staff_bag_file');
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
+    await _settle(tester);
+    await _shot(tester, 'staff_bag_file_2');
+    await _show(tester, const RegisterBagScreen());
+    await _shot(tester, 'staff_bag_register');
+    await _show(tester, const BagHandoverScreen(code: 'B7K4QX'));
+    await _shot(tester, 'staff_bag_handover');
     await _show(tester, const ChatsScreen());
     await _shot(tester, 'staff_chats');
     await _done(tester);

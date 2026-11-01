@@ -6,6 +6,7 @@ import '../../glass.dart';
 import '../../models.dart';
 import '../../theme.dart';
 import '../../ui.dart';
+import 'baggage_screens.dart';
 import 'help_screen.dart';
 import 'map_screen.dart';
 import 'my_reports_screen.dart';
@@ -52,7 +53,13 @@ class HomeScreen extends StatelessWidget {
               icon: Icons.add_box_outlined,
               title: 'Report a lost item',
               subtitle: "Tell us what's missing. We'll keep looking.",
-              onTap: () => AppShell.goTo(ShellTab.reports, reset: true, push: const ReportScreen()),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReportScreen())),
+            ),
+            _ActionCard(
+              icon: Icons.luggage_outlined,
+              title: "My checked bag didn't arrive",
+              subtitle: 'Open a baggage file and follow your bag until it is back.',
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BaggageReportScreen())),
             ),
             _ActionCard(
               icon: Icons.search,
@@ -115,7 +122,7 @@ class _AirportCard extends StatelessWidget {
       child: Column(children: [
         // Real terminal outline from OpenStreetMap; tap to open the interactive map.
         InkWell(
-          onTap: () => AppShell.goTo(ShellTab.find, reset: true, push: const AirportMapScreen()),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AirportMapScreen())),
           child: SizedBox(
             height: 130,
             width: double.infinity,

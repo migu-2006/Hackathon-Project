@@ -546,3 +546,79 @@ def test_live_chat_between_passenger_and_desk(client):
     lhr = login(client, email, "desk-pass", role="staff")
     assert lhr.get(f"/chats/{r['id']}").status_code == 403
     assert lhr.post(f"/chats/{r['id']}", json={"text": "hi"}).status_code == 403
+
+
+def test_lost_luggage_from_report_to_delivery(client):
+    desk, pax, other = staff(client), passenger(client, name="Ana Pop"), passenger(client)
+    form = {"flight": "ro 642", "flightDate": "2026-10-31", "airport": "CRA", "bagType": "suitcase", "color": "red",
+            "deliveryMethod": "deliver", "deliveryAddress": "Str. Unirii 10, Craiova", "deliveryPhone": "+40 700 000 000",
+            "contents": "Grey suit, camera charger"}
+
+    # Validation: bad tag, nothing to identify the bag, delivery without an address, staff accounts.
+    assert pax.post("/baggage-reports", data={**form, "tagNumbers": "12"}).status_code == 422
+    assert pax.post("/baggage-reports", data={**form, "bagType": "", "color": ""}).status_code == 422
+    assert pax.post("/baggage-reports", data={**form, "tagNumbers": "0281123456", "deliveryAddress": ""}).status_code == 422
+    assert desk.post("/baggage-reports", data={**form, "tagNumbers": "0281123456"}).status_code == 403
+
+    r = pax.post("/baggage-reports", data={**form, "tagNumbers": "0281 123 456, RO 654321"})
+    assert r.status_code == 200, r.text
+    file = r.json()
+    assert file["tagNumbers"] == ["0281123456", "RO654321"] and file["flight"] == "RO642"
+    assert file["status"] == "reported" and file["ref"].startswith("CRA-BG-") and file["handoverCode"] is None
+    assert [e["kind"] for e in file["events"]] == ["reported"]
+    assert other.get(f"/baggage-reports/{file['id']}").status_code == 403
+    assert all(f["id"] != file["id"] for f in other.get("/baggage-reports").json())
+
+    # Located in Bucharest, forwarded on the next flight.
+    ev = lambda body: desk.post(f"/baggage-reports/{file['id']}/events", json=body)
+    assert ev({"kind": "located"}).status_code == 422
+    assert ev({"kind": "located", "station": "otp", "note": "Missed the connection"}).json()["status"] == "located"
+    assert ev({"kind": "forwarded", "flight": "RO 644", "eta": "18:40"}).json()["status"] == "forwarded"
+
+    # An unclaimed bag with a similar tag (same serial, other prefix) is only a suggestion...
+    near = desk.post("/baggage/on-hand", files={"image": png()},
+                     data={"airport": "CRA", "tagNumber": "0999654321", "bagType": "suitcase", "color": "red"}).json()
+    assert near["matchedReport"] is None and [c["reportId"] for c in near["candidates"]] == [file["id"]]
+    staff_view = desk.get(f"/baggage-reports/{file['id']}").json()
+    assert staff_view["contents"] and staff_view["passengerName"] == "Ana Pop"
+    assert near["bag"]["id"] in [s["bag"]["id"] for s in staff_view["suggestions"]]
+
+    # ...the bag with the exact tag is matched on the spot and the passenger is told.
+    exact = desk.post("/baggage/on-hand", data={"airport": "CRA", "tagNumber": "0281-123-456", "flight": "RO644",
+                                               "location": "cra-terminal-2-baggage"}).json()
+    assert exact["matchedReport"]["id"] == file["id"] and exact["bag"]["status"] == "matched"
+    mine = pax.get(f"/baggage-reports/{file['id']}").json()
+    assert mine["status"] == "arrived" and mine["events"][-1]["kind"] == "found_here"
+    assert any(n["data"].get("baggageReportId") == file["id"] and n["title"] == "Your bag is here!"
+               for n in pax.get(f"/users/{mine['userId']}/notifications").json())
+    assert desk.post(f"/baggage-reports/{file['id']}/link", json={"bagId": near["bag"]["id"]}).status_code == 409
+
+    # Out for delivery: the passenger gets a delivery code; the driver scans it and closes the file.
+    assert ev({"kind": "out_for_delivery"}).json()["status"] == "out_for_delivery"
+    code = pax.get(f"/baggage-reports/{file['id']}").json()["handoverCode"]
+    assert code and len(code) == 6
+    assert pax.get(f"/baggage-reports/{file['id']}/qr").headers["content-type"] == "image/png"
+    assert pax.get(f"/baggage/handover/{code}").status_code == 403
+    assert desk.get(f"/baggage/handover/{code.lower()}").json()["id"] == file["id"]
+    assert desk.post(f"/baggage/handover/{code}").json() == {"status": "delivered"}
+    assert desk.post(f"/baggage/handover/{code}").status_code == 409
+    assert pax.get(f"/baggage-reports/{file['id']}").json()["status"] == "delivered"
+    assert ev({"kind": "note", "note": "late"}).status_code == 409
+
+    # The suggested bag is still waiting; a desk chat works on baggage files too.
+    assert near["bag"]["id"] in [b["id"] for b in desk.get("/baggage/on-hand", params={"airport": "CRA"}).json()]
+    assert pax.post(f"/chats/{file['id']}", json={"text": "Thanks!"}).status_code == 200
+    assert other.get(f"/chats/{file['id']}").status_code == 403
+    thread = next(t for t in desk.get("/chats", params={"airport": "CRA"}).json() if t["report"]["id"] == file["id"])
+    assert thread["report"]["kind"] == "baggage" and thread["unread"] == 1
+
+
+def test_baggage_report_finds_a_bag_already_at_the_desk(client):
+    desk, pax = staff(client), passenger(client)
+    desk.post("/baggage/on-hand", data={"airport": "CRA", "tagNumber": "0281777888", "bagType": "backpack", "color": "black"})
+    r = pax.post("/baggage-reports", data={"flight": "W6 3121", "flightDate": "2026-10-31", "airport": "CRA",
+                                          "tagNumbers": "0281777888", "deliveryMethod": "pickup"}).json()
+    assert r["status"] == "arrived" and r["matchedBagId"]
+    # Desk pickup: no delivery to an address.
+    assert desk.post(f"/baggage-reports/{r['id']}/events", json={"kind": "out_for_delivery"}).status_code == 409
+    assert desk.post(f"/baggage-reports/{r['id']}/events", json={"kind": "ready_for_pickup"}).json()["handoverCode"]

@@ -54,6 +54,129 @@ class FoundItem {
         status = j['status'] ?? 'available';
 }
 
+/// A step on a baggage file's timeline (reported, located, forwarded, delivered, ...).
+class BagEvent {
+  final String kind;
+  final String? station;
+  final String? flight;
+  final String? eta;
+  final String? note;
+  final String? byName;
+  final DateTime timestamp;
+
+  BagEvent.fromJson(Map<String, dynamic> j)
+      : kind = j['kind'],
+        station = j['station'],
+        flight = j['flight'],
+        eta = j['eta'],
+        note = j['note'],
+        byName = j['byName'],
+        timestamp = DateTime.parse(j['timestamp']).toLocal();
+}
+
+/// An unclaimed checked bag registered by the baggage desk.
+class OnHandBag {
+  final String id;
+  final String airport;
+  final String? tagNumber;
+  final String? flight;
+  final String bagType;
+  final String? color;
+  final String? brand;
+  final String? nameOnTag;
+  final String? location;
+  final String? notes;
+  final String imageUrl;
+  final String status; // on_hand, matched, delivered
+  final String? reportId;
+  final DateTime timestamp;
+
+  OnHandBag.fromJson(Map<String, dynamic> j)
+      : id = j['id'],
+        airport = j['airport'] ?? '',
+        tagNumber = j['tagNumber'],
+        flight = j['flight'],
+        bagType = j['bagType'] ?? 'other',
+        color = j['color'],
+        brand = j['brand'],
+        nameOnTag = j['nameOnTag'],
+        location = j['location'],
+        notes = j['notes'],
+        imageUrl = j['imageUrl'] ?? '',
+        status = j['status'] ?? 'on_hand',
+        reportId = j['reportId'],
+        timestamp = DateTime.parse(j['timestamp']).toLocal();
+}
+
+/// A checked bag that didn't arrive (or arrived damaged): the passenger's file at the arrival airport.
+class BaggageReport {
+  final String id;
+  final String ref; // CRA-BG-00042
+  final String userId;
+  final String airport;
+  final String kind; // delayed, damaged
+  final String flight;
+  final String? flightDate;
+  final List<String> tagNumbers;
+  final String? bagType;
+  final String? color;
+  final String? brand;
+  final String? nameOnTag;
+  final String? marks;
+  final String? contents;
+  final String deliveryMethod; // deliver, pickup
+  final String? deliveryAddress;
+  final String? deliveryPhone;
+  final String? deliveryWindow;
+  final String? imageUrl;
+  final String status; // reported, located, forwarded, arrived, out_for_delivery, ready_for_pickup, delivered, declared_lost
+  final String? matchedBagId;
+  final String? handoverCode; // once out for delivery / ready for pickup
+  final DateTime timestamp;
+  final List<BagEvent> events;
+  // Staff view
+  final OnHandBag? bag;
+  final List<({double score, OnHandBag bag})> suggestions;
+  final String? passengerName;
+  final String? passengerEmail;
+
+  bool get closed => status == 'delivered' || status == 'declared_lost';
+  bool get handover => status == 'out_for_delivery' || status == 'ready_for_pickup';
+
+  BaggageReport.fromJson(Map<String, dynamic> j)
+      : id = j['id'],
+        ref = j['ref'] ?? '',
+        userId = j['userId'] ?? '',
+        airport = j['airport'] ?? '',
+        kind = j['kind'] ?? 'delayed',
+        flight = j['flight'] ?? '',
+        flightDate = j['flightDate'],
+        tagNumbers = List<String>.from(j['tagNumbers'] ?? const []),
+        bagType = j['bagType'],
+        color = j['color'],
+        brand = j['brand'],
+        nameOnTag = j['nameOnTag'],
+        marks = j['marks'],
+        contents = j['contents'],
+        deliveryMethod = j['deliveryMethod'] ?? 'deliver',
+        deliveryAddress = j['deliveryAddress'],
+        deliveryPhone = j['deliveryPhone'],
+        deliveryWindow = j['deliveryWindow'],
+        imageUrl = j['imageUrl'],
+        status = j['status'] ?? 'reported',
+        matchedBagId = j['matchedBagId'],
+        handoverCode = j['handoverCode'],
+        timestamp = DateTime.parse(j['timestamp']).toLocal(),
+        events = [for (final e in j['events'] ?? const []) BagEvent.fromJson(e)],
+        bag = j['bag'] == null ? null : OnHandBag.fromJson(j['bag']),
+        suggestions = [
+          for (final s in j['suggestions'] ?? const [])
+            (score: (s['score'] as num).toDouble(), bag: OnHandBag.fromJson(s['bag'])),
+        ],
+        passengerName = j['passengerName'],
+        passengerEmail = j['passengerEmail'];
+}
+
 /// One message in the live chat about a lost report.
 class ChatMessage {
   final String id;
@@ -112,6 +235,8 @@ class LostReport {
   final DateTime timestamp;
   final String status;
   final String? matchedItemId;
+  final String? ref; // baggage files have their own reference (CRA-BG-00042)
+  final String kind; // lost_item, or baggage (a checked-bag file shown in the shared chat)
 
   LostReport.fromJson(Map<String, dynamic> j)
       : id = j['id'],
@@ -126,7 +251,9 @@ class LostReport {
         imageUrl = j['imageUrl'],
         timestamp = DateTime.parse(j['timestamp']).toLocal(),
         status = j['status'] ?? 'searching',
-        matchedItemId = j['matchedItemId'];
+        matchedItemId = j['matchedItemId'],
+        ref = j['ref'],
+        kind = j['kind'] ?? 'lost_item';
 }
 
 class Match {

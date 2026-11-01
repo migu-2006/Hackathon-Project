@@ -96,6 +96,68 @@ CREATE TABLE IF NOT EXISTS verification_codes (
     "sentAt" TEXT
 );
 
+CREATE TABLE IF NOT EXISTS baggage_reports (
+    "id" TEXT PRIMARY KEY,
+    "ref" TEXT,             -- file reference shown to the passenger, e.g. CRA-BG-00042
+    "userId" TEXT,
+    "airport" TEXT,
+    "kind" TEXT,            -- delayed | damaged
+    "flight" TEXT,
+    "flightDate" TEXT,
+    "tagNumbers" TEXT,      -- JSON list of bag tag numbers
+    "bagType" TEXT,
+    "color" TEXT,
+    "brand" TEXT,
+    "nameOnTag" TEXT,
+    "marks" TEXT,
+    "contents" TEXT,        -- what is inside (private: owner + staff)
+    "deliveryMethod" TEXT,  -- deliver | pickup
+    "deliveryAddress" TEXT, -- private: owner + staff
+    "deliveryPhone" TEXT,
+    "deliveryWindow" TEXT,
+    "imageUrl" TEXT,
+    "embedding" TEXT,
+    "status" TEXT,
+    "matchedBagId" TEXT,
+    "staffId" TEXT,
+    "handoverToken" TEXT,   -- QR on the delivery code
+    "handoverCode" TEXT,    -- 6 characters under the QR
+    "updatedAt" TEXT,
+    "timestamp" TEXT
+);
+
+CREATE TABLE IF NOT EXISTS on_hand_bags (
+    "id" TEXT PRIMARY KEY,
+    "airport" TEXT,
+    "tagNumber" TEXT,
+    "flight" TEXT,
+    "bagType" TEXT,
+    "color" TEXT,
+    "colorHex" TEXT,
+    "brand" TEXT,
+    "nameOnTag" TEXT,
+    "zoneId" TEXT,
+    "location" TEXT,
+    "notes" TEXT,
+    "imageUrl" TEXT,
+    "embedding" TEXT,
+    "status" TEXT,          -- on_hand | matched | delivered
+    "reportId" TEXT,
+    "timestamp" TEXT
+);
+
+CREATE TABLE IF NOT EXISTS bag_events (
+    "id" TEXT PRIMARY KEY,
+    "reportId" TEXT,
+    "kind" TEXT,
+    "station" TEXT,
+    "flight" TEXT,
+    "eta" TEXT,
+    "note" TEXT,
+    "byId" TEXT,
+    "byName" TEXT,
+    "timestamp" TEXT
+);
 CREATE TABLE IF NOT EXISTS chat_messages (
     "id" TEXT PRIMARY KEY,
     "reportId" TEXT,        -- one conversation per lost report
@@ -127,3 +189,6 @@ ALTER TABLE users          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessions       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE verification_codes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_messages  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE baggage_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE on_hand_bags   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bag_events     ENABLE ROW LEVEL SECURITY;

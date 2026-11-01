@@ -32,6 +32,9 @@ class AppData extends ChangeNotifier {
   /// Live events from the backend WebSocket (chat messages, ...), re-published for open screens.
   final live = StreamController<Map<String, dynamic>>.broadcast();
 
+  /// Passenger: checked bags that didn't arrive.
+  List<BaggageReport> baggage = [];
+
   /// Passenger: conversations with the airport team, one per report.
   List<ChatThread> chats = [];
 
@@ -39,6 +42,15 @@ class AppData extends ChangeNotifier {
   String? openChat;
 
   ChatThread? chatFor(String reportId) => chats.where((t) => t.report.id == reportId).firstOrNull;
+
+  Future<void> refreshBaggage() async {
+    try {
+      baggage = await Api.instance.baggageReports();
+      notifyListeners();
+    } catch (_) {
+      // Baggage files are extra: the rest of the app works without them.
+    }
+  }
 
   Future<void> refreshChats() async {
     try {
@@ -68,6 +80,7 @@ class AppData extends ChangeNotifier {
   Future<void> clearPassengerData() async {
     reports = [];
     chats = [];
+    baggage = [];
     claims = [];
     matchesByReport.clear();
     itemCache.clear();
@@ -109,6 +122,7 @@ class AppData extends ChangeNotifier {
   void _forgetPassengerData() {
     reports = [];
     chats = [];
+    baggage = [];
     claims = [];
     matchesByReport.clear();
     itemCache.clear();
@@ -191,6 +205,7 @@ class AppData extends ChangeNotifier {
         return;
       }
       unawaited(refreshChats());
+      unawaited(refreshBaggage());
       final r = await Future.wait([api.lostReports(userId), api.claims(userId)]);
       reports = r[0] as List<LostReport>;
       claims = r[1] as List<Claim>;
@@ -313,6 +328,6 @@ class AppData extends ChangeNotifier {
     return zoneByName(location)?.label ?? location;
   }
 
-  String reportRef(LostReport r) => '${r.airport}-${r.id.substring(0, 5).toUpperCase()}';
+  String reportRef(LostReport r) => r.ref ?? '${r.airport}-${r.id.substring(0, 5).toUpperCase()}';
   String itemRef(FoundItem i) => '${i.airport}-F-${i.id.length >= 4 ? i.id.substring(0, 4).toUpperCase() : i.id}';
 }

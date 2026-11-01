@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageFilter, UnidentifiedImageError
 from pydantic import BaseModel
 
-from . import auth, config, images, matching, storage, vision
+from . import auth, baggage, config, images, matching, storage, vision
 from .auth import current_user, optional_user, require_self_or_staff, require_staff
 
 logging.basicConfig(level=logging.INFO)
@@ -766,7 +766,7 @@ async def scan_qr_image(image: UploadFile = File(...), _: dict = Depends(require
     detector = cv2.QRCodeDetector()
     for frame in (gray, cv2.resize(gray, None, fx=2, fy=2)):  # small QRs decode better upscaled
         value, _, _ = detector.detectAndDecode(frame)
-        if value.startswith("lostfound:claim:"):
+        if value.startswith(("lostfound:claim:", "lostfound:bag:")):
             return {"code": value}
     raise HTTPException(422, "No pick-up QR code found in the image")
 
@@ -797,6 +797,328 @@ async def decide_claim(token: str, body: ClaimDecision, _: dict = Depends(requir
     return {"status": "rejected"}
 
 
+# ---------------------------------------------------------------- Lost luggage (checked bags)
+
+def _bag_report_view(report: dict, staff: bool) -> dict:
+    """Owner and staff see the whole file; the delivery code only exists once the bag is handed over."""
+    out = {k: v for k, v in report.items() if k not in ("embedding", "handoverToken")}
+    if report["status"] not in baggage.HANDOVER | {"delivered"}:
+        out["handoverCode"] = None
+    out["events"] = storage.find("bag_events", order="timestamp ASC", reportId=report["id"])
+    return out
+
+
+def _bag_view(bag: dict) -> dict:
+    return {k: v for k, v in bag.items() if k != "embedding"}
+
+
+def _get_bag_report(report_id: str, user: dict) -> dict:
+    report = storage.get("baggage_reports", report_id)
+    if not report:
+        raise HTTPException(404, "Baggage file not found")
+    if auth.is_staff(user):
+        _check_staff_airport(user, report.get("airport") or config.DEFAULT_AIRPORT)
+    elif report["userId"] != user["id"]:
+        raise HTTPException(403, "This belongs to another passenger")
+    return report
+
+
+def _ensure_handover(report: dict) -> dict:
+    if report.get("handoverToken"):
+        return report
+    while True:
+        code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(6))
+        if not storage.find("baggage_reports", handoverCode=code):
+            break
+    fields = {"handoverToken": secrets.token_urlsafe(16), "handoverCode": code}
+    storage.update("baggage_reports", report["id"], **fields)
+    return {**report, **fields}
+
+
+async def _bag_event(report: dict, kind: str, by: dict | None = None, *, station: str | None = None,
+                     flight: str | None = None, eta: str | None = None, note: str | None = None) -> dict:
+    """Add a step to the file's timeline, move its status, tell the passenger and the desk."""
+    if kind in baggage.HANDOVER:
+        report = _ensure_handover(report)
+    status = baggage.EVENT_STATUS[kind] or report["status"]
+    storage.insert("bag_events", {
+        "id": storage.new_id(), "reportId": report["id"], "kind": kind, "station": station, "flight": flight,
+        "eta": eta, "note": note, "byId": by["id"] if by else None,
+        "byName": (by.get("name") or by["email"].split("@")[0]) if by else None, "timestamp": storage.now(),
+    })
+    storage.update("baggage_reports", report["id"], status=status, updatedAt=storage.now())
+    report = {**report, "status": status}
+    if kind in baggage.MESSAGES:
+        airport = config.AIRPORTS.get(report["airport"], {}).get("name", report["airport"])
+        title, body = baggage.MESSAGES[kind]
+        await notifier.send(report["userId"], title, body.format(
+            ref=report["ref"], airport=airport, station=station or "another airport", flight=flight or "",
+            eta=f", arriving {eta}" if eta else ""), {"baggageReportId": report["id"], "kind": kind})
+    await notifier.push(_desk_ids(report["airport"]), {"type": "baggage", "reportId": report["id"], "kind": kind})
+    return report
+
+
+async def _link_bag(report: dict, bag: dict, by: dict | None = None) -> dict:
+    storage.update("on_hand_bags", bag["id"], status="matched", reportId=report["id"])
+    storage.update("baggage_reports", report["id"], matchedBagId=bag["id"])
+    where = bag.get("location") or "the baggage service desk"
+    return await _bag_event({**report, "matchedBagId": bag["id"]}, "found_here", by, station=report["airport"],
+                            note=f"Tag {bag.get('tagNumber') or '—'} · {where}")
+
+
+def _for_bag_matching(report: dict) -> dict:
+    user = storage.get("users", report["userId"]) or {}
+    return {**report, "passengerName": user.get("name")}
+
+
+def _bag_suggestions(report: dict, limit: int = 5) -> list[dict]:
+    r = _for_bag_matching(report)
+    scored = [(baggage.score(r, b), b) for b in storage.find("on_hand_bags", airport=report["airport"], status="on_hand")]
+    best = sorted(((s, sig, b) for (s, sig), b in scored if s >= 0.3), key=lambda t: -t[0])[:limit]
+    return [{"score": s, "breakdown": sig, "bag": _bag_view(b)} for s, sig, b in best]
+
+
+@app.post("/baggage-reports", tags=["Lost luggage"])
+async def create_baggage_report(
+    flight: str = Form(..., description="e.g. RO642"),
+    flightDate: str = Form(..., description="YYYY-MM-DD"),
+    tagNumbers: str | None = Form(None, description="Bag tag numbers, comma separated"),
+    bagType: str | None = Form(None),
+    color: str | None = Form(None),
+    brand: str | None = Form(None),
+    nameOnTag: str | None = Form(None),
+    marks: str | None = Form(None),
+    contents: str | None = Form(None),
+    kind: str = Form("delayed", description="delayed | damaged"),
+    deliveryMethod: str = Form("deliver", description="deliver | pickup"),
+    deliveryAddress: str | None = Form(None),
+    deliveryPhone: str | None = Form(None),
+    deliveryWindow: str | None = Form(None),
+    airport: str | None = Form(None),
+    image: UploadFile | None = File(None),
+    user: dict = Depends(current_user),
+):
+    """A checked bag didn't arrive (or arrived damaged): open a file at the arrival airport."""
+    if auth.is_staff(user):
+        raise HTTPException(403, "Passengers file baggage reports from their own account")
+    airport = _airport(airport)
+    try:
+        tags = baggage.parse_tags(tagNumbers)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    if kind not in ("delayed", "damaged") or deliveryMethod not in ("deliver", "pickup"):
+        raise HTTPException(422, "Unknown report or delivery type")
+    if bagType and bagType not in baggage.BAG_TYPES:
+        raise HTTPException(422, "Unknown bag type")
+    if not tags and not (bagType and color):
+        raise HTTPException(422, "Add the bag tag number, or at least the bag type and colour")
+    if deliveryMethod == "deliver" and not ((deliveryAddress or "").strip() and (deliveryPhone or "").strip()):
+        raise HTTPException(422, "Add the delivery address and a phone number")
+    embedding, image_url = None, None
+    if image:
+        img, _ = await _read_image(image)
+        analysis = await asyncio.to_thread(vision.analyze, img)
+        embedding, image_url = analysis.embedding, _save_image(img, "lost")
+        color = color or analysis.color
+        bagType = bagType or baggage.AI_TO_BAG.get(analysis.category)
+    n = len(storage.find("baggage_reports", airport=airport)) + 1
+    report = storage.insert("baggage_reports", {
+        "id": storage.new_id(), "ref": f"{airport}-BG-{n:05d}", "userId": user["id"], "airport": airport,
+        "kind": kind, "flight": baggage.normalize_flight(flight), "flightDate": flightDate[:10], "tagNumbers": tags,
+        "bagType": bagType, "color": (color or "").lower() or None, "brand": brand, "nameOnTag": nameOnTag or user.get("name"),
+        "marks": marks, "contents": contents, "deliveryMethod": deliveryMethod,
+        "deliveryAddress": (deliveryAddress or "").strip() or None, "deliveryPhone": (deliveryPhone or "").strip() or None,
+        "deliveryWindow": deliveryWindow, "imageUrl": image_url, "embedding": embedding, "status": "reported",
+        "updatedAt": storage.now(), "timestamp": storage.now(),
+    })
+    report = await _bag_event(report, "reported")
+    # The bag may already be waiting at the desk: same tag number = same bag.
+    suggestions = _bag_suggestions(report)
+    if suggestions and suggestions[0]["score"] >= 1.0:
+        report = await _link_bag(report, storage.get("on_hand_bags", suggestions[0]["bag"]["id"]))
+    return _bag_report_view(storage.get("baggage_reports", report["id"]), staff=False)
+
+
+@app.get("/baggage-reports", tags=["Lost luggage"])
+def list_baggage_reports(airport: str | None = None, status: str | None = None, user: dict = Depends(current_user)):
+    """Staff: the files at their airport. Passengers: their own files, with the timeline."""
+    if auth.is_staff(user):
+        code = _airport(airport)
+        _check_staff_airport(user, code)
+        reports = storage.find("baggage_reports", airport=code, status=status)
+    else:
+        reports = storage.find("baggage_reports", userId=user["id"], status=status)
+    return [_bag_report_view(r, auth.is_staff(user)) for r in reports]
+
+
+@app.get("/baggage-reports/{report_id}", tags=["Lost luggage"])
+def get_baggage_report(report_id: str, user: dict = Depends(current_user)):
+    """One file; staff also get the matched bag and likely unclaimed bags."""
+    report = _get_bag_report(report_id, user)
+    out = _bag_report_view(report, auth.is_staff(user))
+    if auth.is_staff(user):
+        bag = storage.get("on_hand_bags", report["matchedBagId"]) if report.get("matchedBagId") else None
+        out["bag"] = _bag_view(bag) if bag else None
+        out["suggestions"] = [] if bag or report["status"] in baggage.CLOSED else _bag_suggestions(report)
+        passenger = storage.get("users", report["userId"]) or {}
+        out["passengerName"] = passenger.get("name")
+        out["passengerEmail"] = passenger.get("email")
+    return out
+
+
+class BagEventIn(BaseModel):
+    kind: str
+    station: str | None = None
+    flight: str | None = None
+    eta: str | None = None
+    note: str | None = None
+
+
+@app.post("/baggage-reports/{report_id}/events", tags=["Lost luggage"])
+async def add_baggage_event(report_id: str, body: BagEventIn, user: dict = Depends(require_staff)):
+    """Desk update on a file: located elsewhere, forwarded on a flight, arrived, out for delivery..."""
+    report = _get_bag_report(report_id, user)
+    if body.kind not in baggage.STAFF_EVENTS:
+        raise HTTPException(422, "Unknown update")
+    if report["status"] in baggage.CLOSED:
+        raise HTTPException(409, "This file is closed")
+    if body.kind == "located" and not (body.station or "").strip():
+        raise HTTPException(422, "Where was the bag found?")
+    if body.kind == "forwarded" and not (body.flight or "").strip():
+        raise HTTPException(422, "Which flight is the bag on?")
+    if body.kind == "note" and not (body.note or "").strip():
+        raise HTTPException(422, "Write a note")
+    if body.kind == "out_for_delivery" and not report.get("deliveryAddress"):
+        raise HTTPException(409, "The passenger chose to pick the bag up at the desk")
+    await _bag_event(report, body.kind, user, station=(body.station or "").strip().upper() or None,
+                     flight=baggage.normalize_flight(body.flight), eta=(body.eta or "").strip() or None,
+                     note=(body.note or "").strip() or None)
+    if body.kind == "declared_lost" and report.get("matchedBagId"):
+        storage.update("on_hand_bags", report["matchedBagId"], status="on_hand", reportId=None)
+    return get_baggage_report(report_id, user)
+
+
+class BagLink(BaseModel):
+    bagId: str
+
+
+@app.post("/baggage-reports/{report_id}/link", tags=["Lost luggage"])
+async def link_baggage(report_id: str, body: BagLink, user: dict = Depends(require_staff)):
+    """Staff confirm that an unclaimed bag at the desk is this passenger's."""
+    report = _get_bag_report(report_id, user)
+    bag = storage.get("on_hand_bags", body.bagId)
+    if not bag or bag["airport"] != report["airport"]:
+        raise HTTPException(404, "Bag not found at this airport")
+    if bag["status"] != "on_hand" or report.get("matchedBagId") or report["status"] in baggage.CLOSED:
+        raise HTTPException(409, "This bag or file is already matched")
+    await _link_bag(report, bag, user)
+    return get_baggage_report(report_id, user)
+
+
+@app.post("/baggage/on-hand", tags=["Lost luggage"])
+async def register_on_hand_bag(
+    airport: str | None = Form(None),
+    tagNumber: str | None = Form(None),
+    flight: str | None = Form(None),
+    bagType: str | None = Form(None),
+    color: str | None = Form(None),
+    brand: str | None = Form(None),
+    nameOnTag: str | None = Form(None),
+    location: str | None = Form(None, description="Zone id or label where the bag is kept"),
+    notes: str | None = Form(None),
+    image: UploadFile | None = File(None),
+    user: dict = Depends(require_staff),
+):
+    """An unclaimed bag (left on the belt, rush bag from another airport): register it and match
+    it against open files. Same tag number as a file = matched and the passenger is told right away."""
+    airport = _airport(airport)
+    _check_staff_airport(user, airport)
+    tag = baggage.normalize_tag(tagNumber) if tagNumber and tagNumber.strip() else None
+    if tagNumber and tagNumber.strip() and not tag:
+        raise HTTPException(422, "A bag tag number has 6 to 10 letters or digits")
+    if bagType and bagType not in baggage.BAG_TYPES:
+        raise HTTPException(422, "Unknown bag type")
+    embedding, image_url, color_hex = None, None, None
+    if image:
+        img, _ = await _read_image(image)
+        analysis = await asyncio.to_thread(vision.analyze, img)
+        embedding, image_url, color_hex = analysis.embedding, _save_image(img, "found"), analysis.public()["colorHex"]
+        color = color or analysis.color
+        bagType = bagType or baggage.AI_TO_BAG.get(analysis.category, "other")
+    if not tag and not image and not (bagType and color):
+        raise HTTPException(422, "Add the tag number, a photo, or the bag type and colour")
+    zone_id, label = _resolve_zone(airport, location)
+    bag = storage.insert("on_hand_bags", {
+        "id": storage.new_id(), "airport": airport, "tagNumber": tag, "flight": baggage.normalize_flight(flight),
+        "bagType": bagType or "other", "color": (color or "").lower() or None, "colorHex": color_hex, "brand": brand,
+        "nameOnTag": nameOnTag, "zoneId": zone_id, "location": label, "notes": notes, "imageUrl": image_url,
+        "embedding": embedding, "status": "on_hand", "reportId": None, "timestamp": storage.now(),
+    })
+    matched, candidates = None, []
+    for report in storage.find("baggage_reports", airport=airport):
+        if report["status"] in baggage.CLOSED or report.get("matchedBagId"):
+            continue
+        s, _ = baggage.score(_for_bag_matching(report), bag)
+        if s >= 1.0 and not matched:
+            matched = await _link_bag(report, bag, user)
+        elif s >= 0.5:
+            candidates.append({"reportId": report["id"], "ref": report["ref"], "score": s})
+    return {"bag": _bag_view(storage.get("on_hand_bags", bag["id"])),
+            "matchedReport": {"id": matched["id"], "ref": matched["ref"]} if matched else None,
+            "candidates": sorted(candidates, key=lambda c: -c["score"])}
+
+
+@app.get("/baggage/on-hand", tags=["Lost luggage"])
+def list_on_hand_bags(airport: str | None = None, status: str | None = "on_hand", user: dict = Depends(require_staff)):
+    code = _airport(airport)
+    _check_staff_airport(user, code)
+    return [_bag_view(b) for b in storage.find("on_hand_bags", airport=code, status=status)]
+
+
+@app.get("/baggage-reports/{report_id}/qr", tags=["Lost luggage"])
+def baggage_qr(report_id: str, token: str | None = None, user: dict | None = Depends(optional_user)):
+    """QR of the delivery code (owner or staff; `?token=` works for plain image loaders)."""
+    user = user or auth.user_for_token(token)
+    if not user:
+        raise HTTPException(401, "Please sign in")
+    report = _get_bag_report(report_id, user)
+    if report["status"] not in baggage.HANDOVER:
+        raise HTTPException(409, "The delivery code is available once the bag is on its way to you")
+    report = _ensure_handover(report)
+    buf = io.BytesIO()
+    qrcode.make(f"lostfound:bag:{report['handoverToken']}").save(buf, "PNG")
+    return Response(buf.getvalue(), media_type="image/png")
+
+
+def _bag_by_handover(value: str) -> dict:
+    value = value.strip().removeprefix("lostfound:bag:")
+    reports = storage.find("baggage_reports", handoverToken=value)
+    if not reports:
+        code = re.sub(r"[^A-Z0-9]", "", value.upper())
+        if len(code) == 6:
+            reports = storage.find("baggage_reports", handoverCode=code)
+    if not reports:
+        raise HTTPException(404, "Unknown delivery code")
+    return reports[0]
+
+
+@app.get("/baggage/handover/{code}", tags=["Lost luggage"])
+def scan_baggage_handover(code: str, user: dict = Depends(require_staff)):
+    """Driver / desk after scanning the passenger's delivery QR: the file and the bag to hand over."""
+    return get_baggage_report(_bag_by_handover(code)["id"], user)
+
+
+@app.post("/baggage/handover/{code}", tags=["Lost luggage"])
+async def confirm_baggage_handover(code: str, user: dict = Depends(require_staff)):
+    report = _get_bag_report(_bag_by_handover(code)["id"], user)
+    if report["status"] not in baggage.HANDOVER:
+        raise HTTPException(409, "This bag is not waiting to be handed over")
+    await _bag_event(report, "delivered", user)
+    if report.get("matchedBagId"):
+        storage.update("on_hand_bags", report["matchedBagId"], status="delivered")
+    return {"status": "delivered"}
+
+
 # ---------------------------------------------------------------- Live chat (passenger <-> desk)
 
 class ChatSend(BaseModel):
@@ -804,8 +1126,10 @@ class ChatSend(BaseModel):
 
 
 def _chat_report(report_id: str, user: dict) -> dict:
-    """The lost report a conversation belongs to, if this user may take part in it."""
+    """The lost report or baggage file a conversation belongs to, if this user may take part in it."""
     report = storage.get("lost_reports", report_id)
+    if not report and (bag := storage.get("baggage_reports", report_id)):
+        report = {**baggage.as_case(bag), "staffId": bag.get("staffId"), "_table": "baggage_reports"}
     if not report:
         raise HTTPException(404, "Report not found")
     if auth.is_staff(user):
@@ -826,7 +1150,7 @@ def _chat_thread(report: dict, user: dict, messages: list[dict]) -> dict:
     passenger = storage.get("users", report["userId"]) or {}
     agent = storage.get("users", report["staffId"]) if report.get("staffId") else None
     return {
-        "report": _public_report(report),
+        "report": _public_report({k: v for k, v in report.items() if k != "_table"}),
         "item": (_staff_item(item) if staff else _public_item(item, located=item["id"] in _approved_item_ids(user)))
         if item else None,
         "passengerName": passenger.get("name") or passenger.get("email", "").split("@")[0] if staff else None,
@@ -844,12 +1168,15 @@ def list_chats(airport: str | None = None, user: dict = Depends(current_user)):
         code = _airport(airport)
         _check_staff_airport(user, code)
         reports = storage.find("lost_reports", airport=code)
+        bags = storage.find("baggage_reports", airport=code)
     else:
         reports = storage.find("lost_reports", userId=user["id"])
+        bags = storage.find("baggage_reports", userId=user["id"])
     out = []
-    for r in reports:
+    for r in reports + [{**baggage.as_case(b), "staffId": b.get("staffId")} for b in bags]:
         messages = storage.find("chat_messages", order="timestamp ASC", reportId=r["id"])
-        if messages or r.get("matchedItemId"):
+        # Baggage files can always be discussed; lost items once there is a possible match.
+        if messages or r.get("matchedItemId") or (r.get("kind") == "baggage" and not auth.is_staff(user)):
             out.append(_chat_thread(r, user, messages))
     return sorted(out, key=lambda t: (t["last"] or t["report"])["timestamp"], reverse=True)
 
@@ -877,7 +1204,8 @@ async def send_chat_message(report_id: str, body: ChatSend, user: dict = Depends
     airport = report.get("airport") or config.DEFAULT_AIRPORT
     if staff and not report.get("staffId"):
         # The first staff member to answer looks after this passenger from now on.
-        report = storage.update("lost_reports", report_id, staffId=user["id"]) or {**report, "staffId": user["id"]}
+        storage.update(report.get("_table", "lost_reports"), report_id, staffId=user["id"])
+        report = {**report, "staffId": user["id"]}
     msg = storage.insert("chat_messages", {
         "id": storage.new_id(),
         "reportId": report_id,
@@ -927,13 +1255,17 @@ async def dev_reset(body: ResetRequest, x_dev_key: str | None = Header(None),
     Connected apps get a live {"type": "reset"} event and clear their screens."""
     _require_dev(x_dev_key, user)
     deleted = {t: storage.execute(f"DELETE FROM {t}")
-               for t in ("lost_reports", "claims", "claim_attempts", "notifications", "chat_messages")}
+               for t in ("lost_reports", "claims", "claim_attempts", "notifications", "chat_messages",
+                         "baggage_reports", "bag_events")}
     prefixes = ("lost_",)
     if body.includeItems:
         deleted["found_items"] = storage.execute("DELETE FROM found_items")
+        deleted["on_hand_bags"] = storage.execute("DELETE FROM on_hand_bags")
         prefixes += ("found_", "preview_")
     else:
         deleted["itemsBackOnShelf"] = storage.execute("UPDATE found_items SET status = 'available' WHERE status != 'available'")
+        deleted["bagsBackOnHand"] = storage.execute(
+            'UPDATE on_hand_bags SET "status" = \'on_hand\', "reportId" = NULL WHERE "status" != \'on_hand\'')
     deleted["photos"] = images.delete_prefixed(prefixes)
     log.warning("Developer reset: %s", deleted)
     await notifier.broadcast({"type": "reset"})

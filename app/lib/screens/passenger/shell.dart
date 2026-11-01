@@ -67,6 +67,8 @@ class _AppShellState extends State<AppShell> {
   void _connect() {
     try {
       _channel = Api.instance.notificationStream(AppData.instance.userId);
+      // A failed connection also ends the stream (onDone reconnects); don't leave the error unhandled.
+      _channel!.ready.ignore();
       _sub = _channel!.stream.listen(
         (msg) {
           final data = jsonDecode(msg) as Map<String, dynamic>;

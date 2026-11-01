@@ -8,6 +8,7 @@ import '../../api.dart';
 import '../../i18n.dart';
 import '../../models.dart';
 import '../../widgets.dart';
+import 'baggage_desk_screen.dart';
 
 /// Modul C: the operator scans the passenger's QR, checks the verification answer and hands over.
 class PickupScreen extends StatefulWidget {
@@ -39,9 +40,24 @@ class _PickupScreenState extends State<PickupScreen> {
     }
   }
 
-  void _open(String token) {
-    if (token.trim().isEmpty) return;
-    Navigator.push(context, MaterialPageRoute(builder: (_) => ClaimReviewScreen(token: token.trim())));
+  /// Pick-up passes (found items) and delivery codes (checked bags) are both handed over here.
+  Future<void> _open(String token) async {
+    token = token.trim();
+    if (token.isEmpty) return;
+    var bag = token.startsWith('lostfound:bag:');
+    if (!bag && !token.startsWith('lostfound:claim:')) {
+      // A typed code: delivery codes and pickup codes look alike, so ask the server.
+      try {
+        await Api.instance.scanBagHandover(token);
+        bag = true;
+      } on ApiException {
+        bag = false;
+      }
+    }
+    if (!mounted) return;
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => bag ? BagHandoverScreen(code: token) : ClaimReviewScreen(token: token),
+    ));
   }
 
   @override
@@ -102,7 +118,7 @@ class _ScannerPageState extends State<_ScannerPage> {
         body: MobileScanner(
           onDetect: (capture) {
             final value = capture.barcodes.firstOrNull?.rawValue;
-            if (_done || value == null || !value.startsWith('lostfound:claim:')) return;
+            if (_done || value == null || !(value.startsWith('lostfound:claim:') || value.startsWith('lostfound:bag:'))) return;
             _done = true;
             Navigator.pop(context, value);
           },

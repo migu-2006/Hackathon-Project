@@ -268,6 +268,98 @@ class Api {
     );
   }
 
+  // ---------------------------------------------------------------- Lost luggage
+
+  Future<BaggageReport> createBaggageReport({
+    required String airport,
+    required String flight,
+    required DateTime flightDate,
+    required List<String> tagNumbers,
+    required String kind,
+    required String deliveryMethod,
+    String? bagType,
+    String? color,
+    String? brand,
+    String? nameOnTag,
+    String? marks,
+    String? contents,
+    String? deliveryAddress,
+    String? deliveryPhone,
+    String? deliveryWindow,
+    XFile? image,
+  }) async =>
+      BaggageReport.fromJson(await _postMultipart('/baggage-reports', {
+        'airport': airport,
+        'flight': flight,
+        'flightDate': flightDate.toIso8601String().substring(0, 10),
+        'tagNumbers': tagNumbers.join(','),
+        'kind': kind,
+        'deliveryMethod': deliveryMethod,
+        'bagType': bagType,
+        'color': color,
+        'brand': brand,
+        'nameOnTag': nameOnTag,
+        'marks': marks,
+        'contents': contents,
+        'deliveryAddress': deliveryAddress,
+        'deliveryPhone': deliveryPhone,
+        'deliveryWindow': deliveryWindow,
+      }, image: image));
+
+  /// Passengers: their files. Staff: the files at [airport].
+  Future<List<BaggageReport>> baggageReports({String? airport, String? status}) async =>
+      [for (final r in await _get('/baggage-reports', {'airport': airport, 'status': status})) BaggageReport.fromJson(r)];
+
+  Future<BaggageReport> baggageReport(String id) async => BaggageReport.fromJson(await _get('/baggage-reports/$id'));
+
+  Future<BaggageReport> addBagEvent(String id, String kind, {String? station, String? flight, String? eta, String? note}) async =>
+      BaggageReport.fromJson(await _postJson('/baggage-reports/$id/events',
+          {'kind': kind, 'station': station, 'flight': flight, 'eta': eta, 'note': note}));
+
+  Future<BaggageReport> linkBag(String reportId, String bagId) async =>
+      BaggageReport.fromJson(await _postJson('/baggage-reports/$reportId/link', {'bagId': bagId}));
+
+  /// Returns the bag, the file it matched by tag number (if any) and how many other files look likely.
+  Future<({OnHandBag bag, String? matchedRef, int candidates})> registerOnHandBag({
+    required String airport,
+    String? tagNumber,
+    String? flight,
+    String? bagType,
+    String? color,
+    String? brand,
+    String? nameOnTag,
+    String? location,
+    String? notes,
+    XFile? image,
+  }) async {
+    final r = await _postMultipart('/baggage/on-hand', {
+      'airport': airport,
+      'tagNumber': tagNumber,
+      'flight': flight,
+      'bagType': bagType,
+      'color': color,
+      'brand': brand,
+      'nameOnTag': nameOnTag,
+      'location': location,
+      'notes': notes,
+    }, image: image);
+    return (
+      bag: OnHandBag.fromJson(r['bag']),
+      matchedRef: r['matchedReport']?['ref'] as String?,
+      candidates: (r['candidates'] as List).length,
+    );
+  }
+
+  Future<List<OnHandBag>> onHandBags(String airport, {String? status = 'on_hand'}) async =>
+      [for (final b in await _get('/baggage/on-hand', {'airport': airport, 'status': status})) OnHandBag.fromJson(b)];
+
+  Future<BaggageReport> scanBagHandover(String code) async =>
+      BaggageReport.fromJson(await _get('/baggage/handover/${Uri.encodeComponent(code)}'));
+
+  Future<void> confirmBagHandover(String code) async => _postJson('/baggage/handover/${Uri.encodeComponent(code)}', {});
+
+  String bagQrUrl(String reportId) => '$baseUrl/baggage-reports/$reportId/qr?token=${Uri.encodeComponent(token ?? '')}';
+
   // ---------------------------------------------------------------- Live chat
 
   /// Conversations: staff get those at [airport], passengers their own.

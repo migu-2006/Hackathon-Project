@@ -8,6 +8,7 @@ import '../../models.dart';
 import '../../theme.dart';
 import '../../ui.dart';
 import '../chat_screen.dart';
+import 'baggage_screens.dart';
 import 'item_details_screen.dart';
 import 'map_screen.dart';
 import 'report_screen.dart';
@@ -54,17 +55,19 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
         listenable: data,
         builder: (context, _) {
           final reports = _closed ? data.closedReports : data.activeReports;
+          final bags = data.baggage.where((b) => b.closed == _closed).toList();
+          final openBags = data.baggage.where((b) => !b.closed).length;
           return PageBody(onRefresh: data.refresh, children: [
             const PageHeader(title: "We're on the case.", subtitle: 'Follow your report from lost to reunited.'),
             _Tabs(
-              active: data.activeReports.length,
-              closed: data.closedReports.length,
+              active: data.activeReports.length + openBags,
+              closed: data.closedReports.length + data.baggage.length - openBags,
               showClosed: _closed,
               onChanged: (v) => setState(() => _closed = v),
             ),
             const SizedBox(height: 10),
             if (!data.loaded) const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
-            if (data.loaded && reports.isEmpty) ...[
+            if (data.loaded && reports.isEmpty && bags.isEmpty) ...[
               NoteCard(
                 icon: _closed ? Icons.inventory_2_outlined : Icons.assignment_outlined,
                 title: _closed ? 'No closed reports yet' : 'No active reports',
@@ -78,6 +81,7 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
                 ),
               ],
             ],
+            for (final b in bags) BaggageCase(report: b),
             for (final r in reports) _ReportCase(report: r),
             const SizedBox(height: 6),
             const HelpLink(),
