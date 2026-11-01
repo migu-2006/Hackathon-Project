@@ -721,4 +721,40 @@ const translations = <String, (String, String)>{
   'Baggage claim': ('Banda de bagaje', 'Recogida de equipajes'),
   'Arrivals hall': ('Sala de sosiri', 'Vestíbulo de llegadas'),
   'Departure gates': ('Porți de îmbarcare', 'Puertas de embarque'),
+
+  // "I found an item": passengers hand in items other people lost.
+  'I found an item': ('Am găsit un obiect', 'Encontré un objeto'),
+  'I found it': ('Am găsit', 'Lo encontré'),
+  'Found something?': ('Ați găsit ceva?', '¿Ha encontrado algo?'),
+  "Help it get home. Send it to the airport's lost & found and we'll find its owner.":
+      ('Ajutați-l să ajungă acasă. Trimiteți-l la obiecte pierdute și îi găsim proprietarul.',
+       'Ayúdelo a volver a casa. Envíelo a objetos perdidos del aeropuerto y encontraremos a su dueño.'),
+  'Photo of the item': ('Fotografia obiectului', 'Foto del objeto'),
+  'Where did you find it?': ('Unde l-ați găsit?', '¿Dónde lo encontró?'),
+  'Pick an area, shop or café': ('Alegeți o zonă, un magazin sau o cafenea', 'Elija una zona, tienda o cafetería'),
+  'What is it? Colour, brand, size.\nE.g. Blue umbrella with a wooden handle.':
+      ('Ce este? Culoare, marcă, mărime.\nEx.: umbrelă albastră cu mâner de lemn.',
+       '¿Qué es? Color, marca, tamaño.\nP. ej.: paraguas azul con mango de madera.'),
+  'Hidden detail (optional)': ('Detaliu ascuns (opțional)', 'Detalle oculto (opcional)'),
+  'Something only the owner would know': ('Ceva ce doar proprietarul ar ști', 'Algo que solo el dueño sabría'),
+  'Only staff see the hidden detail': ('Doar personalul vede detaliul ascuns', 'Solo el personal ve el detalle oculto'),
+  'The owner has to describe it before staff hand the item over. Other passengers never see it, nor who found the item.':
+      ('Proprietarul trebuie să îl descrie înainte ca personalul să predea obiectul. Ceilalți pasageri nu îl văd și nici nu află cine a găsit obiectul.',
+       'El dueño debe describirlo antes de que el personal entregue el objeto. Los demás pasajeros no lo ven, ni saben quién encontró el objeto.'),
+  'Send to lost & found': ('Trimiteți la obiecte pierdute', 'Enviar a objetos perdidos'),
+  'Items you handed in': ('Obiecte predate de dumneavoastră', 'Objetos que ha entregado'),
+  'Waiting for owner': ('Așteaptă proprietarul', 'Esperando al dueño'),
+  'Returned': ('Returnat', 'Devuelto'),
+  'Take a photo of the item': ('Fotografiați obiectul', 'Haga una foto del objeto'),
+  'Our AI recognises the type and colour.': ('AI-ul nostru recunoaște tipul și culoarea.', 'Nuestra IA reconoce el tipo y el color.'),
+  'Retake photo': ('Refaceți fotografia', 'Repetir la foto'),
+  'Mark where you found the item': ('Marcați unde ați găsit obiectul', 'Indique dónde encontró el objeto'),
+  'Describe the item': ('Descrieți obiectul', 'Describa el objeto'),
+  'Thank you!': ('Vă mulțumim!', '¡Gracias!'),
+  'OK': ('OK', 'Aceptar'),
+  '{item} is now in the inventory of {airport}, and the airport team has been alerted. Please leave the item at the {desk} or with any staff member.':
+      ('{item} este acum în inventarul {airport}, iar echipa aeroportului a fost anunțată. Vă rugăm să lăsați obiectul la {desk} sau la orice angajat.',
+       '{item} ya está en el inventario de {airport} y el equipo del aeropuerto ha sido avisado. Deje el objeto en {desk} o con cualquier miembro del personal.'),
+  'Handed in by a passenger': ('Predat de un pasager', 'Entregado por un pasajero'),
+  'A passenger handed in {item} found at {place}.': ('Un pasager a predat {item}, găsit la {place}.', 'Un pasajero entregó {item}, encontrado en {place}.'),
 };

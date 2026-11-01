@@ -133,19 +133,21 @@ class _AddBubble extends StatelessWidget {
 }
 
 /// Searchable list of the airport's areas and shops / services.
-Future<Place?> pickPlace(BuildContext context, List<Place> places, {Set<String> exclude = const {}}) {
+Future<Place?> pickPlace(BuildContext context, List<Place> places,
+    {Set<String> exclude = const {}, String title = 'Where did you go?'}) {
   return showModalBottomSheet<Place>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
     useSafeArea: true,
-    builder: (ctx) => _PlacePicker(places: [for (final pl in places) if (!exclude.contains(pl.id)) pl]),
+    builder: (ctx) => _PlacePicker(title: title, places: [for (final pl in places) if (!exclude.contains(pl.id)) pl]),
   );
 }
 
 class _PlacePicker extends StatefulWidget {
+  final String title;
   final List<Place> places;
-  const _PlacePicker({required this.places});
+  const _PlacePicker({required this.title, required this.places});
 
   @override
   State<_PlacePicker> createState() => _PlacePickerState();
@@ -186,7 +188,7 @@ class _PlacePickerState extends State<_PlacePicker> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Where did you go?'.tr, style: Theme.of(context).textTheme.titleMedium),
+            Text(widget.title.tr, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             TextField(
               autofocus: false,

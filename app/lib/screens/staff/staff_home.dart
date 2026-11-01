@@ -1,5 +1,10 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:convert';
 
+import 'package:flutter/material.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
+
+import '../../api.dart';
 import '../../app_state.dart';
 import '../../i18n.dart';
 import '../../models.dart';
@@ -25,9 +30,14 @@ class _StaffHomeState extends State<StaffHome> {
   final _reviewKey = GlobalKey<ReviewScreenState>();
   final _attemptsKey = GlobalKey<AttemptsScreenState>();
 
+  WebSocketChannel? _channel;
+  StreamSubscription? _sub;
+  Timer? _reconnect;
+
   @override
   void initState() {
     super.initState();
+    _connect();
     // Staff start at their home airport (set by the administrator).
     final home = AppData.instance.user?.airport;
     if (home != null && home != AppData.instance.airport.code) {
@@ -35,6 +45,61 @@ class _StaffHomeState extends State<StaffHome> {
     } else if (AppData.instance.zones.isEmpty) {
       AppData.instance.refresh();
     }
+  }
+
+  @override
+  void dispose() {
+    _reconnect?.cancel();
+    _sub?.cancel();
+    _channel?.sink.close();
+    super.dispose();
+  }
+
+  // Live alerts from the backend, e.g. an item a passenger just handed in.
+  void _connect() {
+    final user = AppData.instance.user;
+    if (user == null) return;
+    try {
+      _channel = Api.instance.notificationStream(user.id);
+      _sub = _channel!.stream.listen(
+        (msg) {
+          final data = jsonDecode(msg) as Map<String, dynamic>;
+          if (data['type'] == 'handed_in') _onHandedIn(data);
+        },
+        onDone: _scheduleReconnect,
+        onError: (_) => _scheduleReconnect(),
+      );
+    } catch (_) {
+      _scheduleReconnect();
+    }
+  }
+
+  void _scheduleReconnect() {
+    if (!mounted) return;
+    _reconnect?.cancel();
+    _reconnect = Timer(const Duration(seconds: 5), _connect);
+  }
+
+  /// A passenger handed an item in: it is already in the inventory, show it.
+  void _onHandedIn(Map<String, dynamic> e) {
+    if (!mounted || e['airport'] != AppData.instance.airport.code) return;
+    _inventoryKey.currentState?.refresh(highlight: e['itemId']);
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 10),
+      content: Row(children: [
+        const Icon(Icons.volunteer_activism, color: Colors.white),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text('A passenger handed in {item} found at {place}.'.trf({
+            'item': itemTitle(e['color'], e['category'] ?? 'other'),
+            'place': e['location'] ?? '',
+          })),
+        ),
+      ]),
+      action: SnackBarAction(label: 'VIEW'.tr, onPressed: () => setState(() => _tab = 1)),
+    ));
   }
 
   /// After intake: confirm, then show the item in the inventory.

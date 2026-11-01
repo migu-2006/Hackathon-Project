@@ -69,6 +69,15 @@ class Notifier:
             except Exception:
                 self.disconnect(user_id, ws)
 
+    async def push(self, user_ids, event: dict):
+        """Live event to some users' open apps (not stored), e.g. a new item for the staff desk."""
+        for user_id in user_ids:
+            for ws in list(self.sockets.get(user_id, ())):
+                try:
+                    await ws.send_json(event)
+                except Exception:
+                    self.disconnect(user_id, ws)
+
     async def broadcast(self, event: dict):
         """Live event to every connected app (not stored), e.g. {"type": "reset"}."""
         for user_id, sockets in list(self.sockets.items()):
@@ -146,7 +155,7 @@ def _public_item(item: dict, reveal: bool = False, located: bool = False) -> dic
     """Passenger view: no hidden detail, and only the blurred photo unless the passenger
     found this item through a reverse image search (`reveal`). Where the item was found stays
     hidden until staff approve this passenger's claim on it (`located`)."""
-    out = {k: v for k, v in item.items() if k not in ("embedding", "secretDetail", "previewUrl")}
+    out = {k: v for k, v in item.items() if k not in ("embedding", "secretDetail", "previewUrl", "reportedBy")}
     if not reveal:
         out["imageUrl"] = _preview_url(item)
     out["photoHidden"] = not reveal
@@ -243,21 +252,11 @@ async def analyze_image(image: UploadFile = File(...), _: dict = Depends(require
     return analysis.public()
 
 
-@app.post("/found-items", tags=["Smart Intake"])
-async def create_found_item(
-    image: UploadFile = File(...),
-    location: str = Form(..., description="Zone id or label, e.g. lhr-gate-b42 / Terminal 5 · Gate B42"),
-    airport: str | None = Form(None, description="IATA code, e.g. LHR or CRA"),
-    category: str | None = Form(None, description="Override the AI category"),
-    color: str | None = Form(None, description="Override the AI color"),
-    notes: str | None = Form(None),
-    secretDetail: str | None = Form(None, description="Hidden detail used to verify ownership"),
-    _: dict = Depends(require_staff),
-):
-    airport = _airport(airport)
-    img, _ = await _read_image(image)
+async def _register_item(img: Image.Image, airport: str, zone_id: str | None, label: str | None, *,
+                         category: str | None = None, color: str | None = None, notes: str | None = None,
+                         secret: str | None = None, source: str = "staff", reported_by: str | None = None):
+    """Add a found item to the inventory and notify the passengers whose reports it matches."""
     analysis = await asyncio.to_thread(vision.analyze, img)
-    zone_id, label = _resolve_zone(airport, location)
     item = storage.insert("found_items", {
         "id": storage.new_id(),
         "airport": airport,
@@ -271,21 +270,82 @@ async def create_found_item(
         "text": analysis.text,
         "location": label,
         "notes": notes,
-        "secretDetail": secretDetail,
+        "secretDetail": secret,
+        "source": source,
+        "reportedBy": reported_by,
         "embedding": analysis.embedding,
         "timestamp": storage.now(),
         "status": "available",
     })
 
-    # Auto-match: notify every passenger at this airport still searching for something like this.
+    # Auto-match: notify every passenger at this airport still searching for something like this
+    # (never the passenger who handed it in).
     notified = []
     for report in storage.find("lost_reports", status="searching", airport=airport):
+        if report["userId"] == reported_by:
+            continue
         s, breakdown = matching.score(_for_matching(report), item)
         if s >= config.MATCH_THRESHOLD:
             await _notify_match(report, {"score": s, "breakdown": breakdown, "item": item})
             notified.append({"reportId": report["id"], "score": s})
+    return item, analysis, notified
 
+
+@app.post("/found-items", tags=["Smart Intake"])
+async def create_found_item(
+    image: UploadFile = File(...),
+    location: str = Form(..., description="Zone id or label, e.g. lhr-gate-b42 / Terminal 5 · Gate B42"),
+    airport: str | None = Form(None, description="IATA code, e.g. LHR or CRA"),
+    category: str | None = Form(None, description="Override the AI category"),
+    color: str | None = Form(None, description="Override the AI color"),
+    notes: str | None = Form(None),
+    secretDetail: str | None = Form(None, description="Hidden detail used to verify ownership"),
+    _: dict = Depends(require_staff),
+):
+    airport = _airport(airport)
+    img, _ = await _read_image(image)
+    zone_id, label = _resolve_zone(airport, location)
+    item, analysis, notified = await _register_item(img, airport, zone_id, label, category=category, color=color,
+                                                    notes=notes, secret=secretDetail)
     return {"item": _staff_item(item), "ai": analysis.public(), "notifiedReports": notified}
+
+
+@app.post("/handed-in", tags=["Passenger"])
+async def hand_in_item(
+    image: UploadFile = File(...),
+    place: str = Form(..., description="Where it was found: a place id from /airports/{IATA}/places"),
+    description: str = Form(..., min_length=3, max_length=500),
+    secretDetail: str | None = Form(None, max_length=200, description="Hidden detail only the owner would know"),
+    airport: str | None = Form(None),
+    user: dict = Depends(current_user),
+):
+    """A passenger found something someone else lost: it goes straight into the airport's
+    inventory (marked as handed in by a passenger), is matched against open reports, and the
+    airport's staff get a live alert."""
+    if auth.is_staff(user):
+        raise HTTPException(403, "Staff register found items from the intake screen")
+    airport = _airport(airport)
+    spot = next((p for p in config.places(airport) if p["id"] == place), None)
+    if not spot:
+        raise HTTPException(422, f"Unknown place at {airport}")
+    zone_id = spot["zoneIds"][0]
+    img, _ = await _read_image(image)
+    item, analysis, notified = await _register_item(
+        img, airport, zone_id, spot["label"], notes=description.strip(),
+        secret=(secretDetail or "").strip() or None, source="passenger", reported_by=user["id"])
+    desk = [u["id"] for u in storage.find("users") if u["role"] == "admin"
+            or (u["role"] == "staff" and (u.get("airport") or airport) == airport)]
+    await notifier.push(desk, {"type": "handed_in", "itemId": item["id"], "airport": airport,
+                               "category": item["category"], "color": item["color"], "location": item["location"]})
+    return {"item": _public_item(item, reveal=True, located=True), "ai": analysis.public(),
+            "notifiedReports": len(notified)}
+
+
+@app.get("/handed-in", tags=["Passenger"])
+def my_handed_in_items(user: dict = Depends(current_user)):
+    """Items this passenger handed in, newest first, with their own photo and location."""
+    items = storage.find("found_items", reportedBy=user["id"])
+    return [_public_item(i, reveal=True, located=True) for i in sorted(items, key=lambda i: i["timestamp"], reverse=True)]
 
 
 @app.get("/found-items", tags=["Found Items"])
@@ -571,6 +631,8 @@ def create_claim(body: ClaimCreate, user: dict = Depends(current_user)):
         raise HTTPException(403, "You can only claim items for your own reports")
     if item["status"] != "available":
         raise HTTPException(409, "Item is no longer available")
+    if item.get("reportedBy") == user["id"]:
+        raise HTTPException(403, "You handed this item in, so you can't claim it")
     # One claim per passenger and item: once the details are sent, they can't claim it again,
     # whatever staff decide. A claim opened but never sent is reused.
     mine = storage.find("claims", userId=user["id"], itemId=item["id"])

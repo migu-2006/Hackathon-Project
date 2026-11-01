@@ -28,8 +28,11 @@ class FoundItem {
   final bool locationHidden; // passengers: hidden until staff approve their claim on this item
   final String? notes;
   final String? secretDetail; // only present in the staff scan view
+  final String source; // staff, or passenger (handed in through the app)
   final DateTime timestamp;
   final String status;
+
+  bool get handedInByPassenger => source == 'passenger';
 
   FoundItem.fromJson(Map<String, dynamic> j)
       : id = j['id'],
@@ -46,6 +49,7 @@ class FoundItem {
         locationHidden = j['locationHidden'] ?? false,
         notes = j['notes'],
         secretDetail = j['secretDetail'],
+        source = j['source'] ?? 'staff',
         timestamp = DateTime.parse(j['timestamp']).toLocal(),
         status = j['status'] ?? 'available';
 }

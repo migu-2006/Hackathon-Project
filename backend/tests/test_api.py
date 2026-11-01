@@ -470,3 +470,38 @@ def test_route_limits_matching_and_find_items(client):
     assert passenger(client).get("/found-items", params={"airport": "CRA", "onMyRoute": True}).json() == []
     ids = {i["id"] for i in desk.get("/found-items", params={"airport": "CRA", "staff": True}).json()}
     assert {near["item"]["id"], away["item"]["id"]} <= ids
+
+
+def test_passenger_hands_in_a_found_item(client):
+    desk, finder, owner = staff(client), passenger(client), passenger(client)
+    shop = next(p for p in client.get("/airports/CRA/places").json() if p["kind"] == "poi")
+    food = "cra-terminal-2-food"
+    lost = owner.post("/lost-reports", data={"category": "umbrella", "color": "blue", "airport": "CRA",
+                                            "route": json.dumps([food, shop["id"]])}).json()["report"]
+
+    assert finder.post("/handed-in", files={"image": png()},
+                       data={"place": "nowhere", "description": "Blue umbrella", "airport": "CRA"}).status_code == 422
+    assert desk.post("/handed-in", files={"image": png()},
+                     data={"place": shop["id"], "description": "Blue umbrella", "airport": "CRA"}).status_code == 403
+    r = finder.post("/handed-in", files={"image": png()},
+                    data={"place": shop["id"], "description": "Blue umbrella by the ATM", "airport": "CRA",
+                          "secretDetail": "Name tag inside"})
+    assert r.status_code == 200, r.text
+    item = r.json()["item"]
+    assert item["source"] == "passenger" and item["location"] == shop["label"]
+    assert "secretDetail" not in item and "reportedBy" not in item
+
+    # It is in the staff inventory, marked as handed in, with the hidden detail and the finder.
+    inv = {i["id"]: i for i in desk.get("/found-items", params={"airport": "CRA", "staff": True}).json()}
+    assert inv[item["id"]]["source"] == "passenger" and inv[item["id"]]["secretDetail"] == "Name tag inside"
+    assert inv[item["id"]]["reportedBy"] and inv[item["id"]]["zoneId"]
+    assert [i["id"] for i in finder.get("/handed-in").json()] == [item["id"]]
+    assert owner.get("/handed-in").json() == []
+
+    # Other passengers never learn who found it; the finder can't claim it.
+    shown = owner.get(f"/found-items/{item['id']}").json()
+    assert "reportedBy" not in shown and shown["locationHidden"]
+    mine = finder.post("/lost-reports", data={"category": "umbrella", "airport": "CRA", "route": json.dumps([food])})
+    claim = finder.post("/claims", json={"reportId": mine.json()["report"]["id"], "itemId": item["id"]})
+    assert claim.status_code == 403
+    assert owner.post("/claims", json={"reportId": lost["id"], "itemId": item["id"]}).status_code == 200

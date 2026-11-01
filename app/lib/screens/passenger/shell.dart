@@ -11,11 +11,12 @@ import '../../i18n.dart';
 import '../../models.dart';
 import '../../theme.dart';
 import 'found_items_screen.dart';
+import 'hand_in_screen.dart';
 import 'help_screen.dart';
 import 'home_screen.dart';
 import 'my_reports_screen.dart';
 
-enum ShellTab { home, find, reports, help }
+enum ShellTab { home, find, handIn, reports, help }
 
 /// Passenger app frame: bottom navigation with one navigator per tab, so the bar stays
 /// visible on inner screens (item details, pickup pass, ...) like in the design.
@@ -138,6 +139,7 @@ class _AppShellState extends State<AppShell> {
   Widget _root(ShellTab tab) => switch (tab) {
         ShellTab.home => const HomeScreen(),
         ShellTab.find => const FoundItemsScreen(),
+        ShellTab.handIn => const HandInScreen(),
         ShellTab.reports => const MyReportsScreen(),
         ShellTab.help => const HelpScreen(),
       };
@@ -177,6 +179,11 @@ class _AppShellState extends State<AppShell> {
             destinations: [
               NavigationDestination(icon: const Icon(Icons.home_outlined), selectedIcon: const Icon(Icons.home), label: 'Home'.tr),
               NavigationDestination(icon: const Icon(Icons.search), label: 'Find items'.tr),
+              NavigationDestination(
+                icon: const Icon(Icons.volunteer_activism_outlined),
+                selectedIcon: const Icon(Icons.volunteer_activism),
+                label: 'I found it'.tr,
+              ),
               NavigationDestination(
                 icon: Badge(isLabelVisible: unread > 0, label: Text('$unread'), child: const Icon(Icons.assignment_outlined)),
                 selectedIcon: const Icon(Icons.assignment),

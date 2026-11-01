@@ -5,6 +5,7 @@ import '../../app_state.dart';
 import '../../i18n.dart';
 import '../../models.dart';
 import '../../ui.dart';
+import '../../theme.dart';
 import '../../widgets.dart';
 import '../passenger/map_screen.dart';
 
@@ -85,7 +86,10 @@ class InventoryScreenState extends State<InventoryScreen> {
                   trailing: items[i].id == _highlight
                       ? const RBadge('New', icon: Icons.check_circle, kind: BadgeKind.success)
                       : null,
-                  footer: _MapButton(item: items[i]),
+                  footer: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    if (items[i].handedInByPassenger) _HandedIn(item: items[i]),
+                    _MapButton(item: items[i]),
+                  ]),
                 ),
               );
             },
@@ -115,4 +119,25 @@ class _MapButton extends StatelessWidget {
           label: Text((item.zoneId == null ? 'No map position for this location' : 'See location on map').tr),
         ),
       );
+}
+
+/// Handed in by a passenger through the app: the badge and what they wrote about it.
+class _HandedIn extends StatelessWidget {
+  final FoundItem item;
+  const _HandedIn({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const RBadge('Handed in by a passenger', icon: Icons.volunteer_activism, kind: BadgeKind.warning),
+        if ((item.notes ?? '').isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text('"${item.notes}"', style: TextStyle(color: p.muted, fontSize: 12.5, fontStyle: FontStyle.italic)),
+        ],
+      ]),
+    );
+  }
 }

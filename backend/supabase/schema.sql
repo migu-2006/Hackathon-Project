@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS found_items (
     "location" TEXT,
     "notes" TEXT,
     "secretDetail" TEXT,    -- staff only
+    "source" TEXT,          -- staff, or passenger (handed in through the app)
+    "reportedBy" TEXT,      -- passenger who handed it in (staff only)
     "embedding" TEXT,       -- JSON list of floats
     "timestamp" TEXT,
     "status" TEXT

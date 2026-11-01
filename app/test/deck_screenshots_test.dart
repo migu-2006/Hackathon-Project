@@ -60,7 +60,10 @@ List<Map<String, dynamic>> _allItems({bool staff = false}) => [
       _item('f00dcafe0001', 'wallet', 'brown', '#7b4a2a', 'food', 'Food court', '2026-10-30T18:20:00Z',
           secret: staff ? 'Student card inside' : null),
       _item('b0b0c0c0d0d0', 'headphones', 'white', '#eeeeee', 'baggage', 'Baggage claim', '2026-10-30T15:05:00Z'),
-      _item('c4c4e8e8f1f1', 'umbrella', 'blue', '#2d5fa8', 'arrivals', 'Arrivals hall', '2026-10-30T11:30:00Z'),
+      {
+        ..._item('c4c4e8e8f1f1', 'umbrella', 'blue', '#2d5fa8', 'arrivals', 'Arrivals hall', '2026-10-30T11:30:00Z'),
+        'source': 'passenger', 'notes': 'Blue umbrella left on a bench by the exit',
+      },
       _item('d7d7a1a1b2b2', 'suitcase', 'red', '#b3202a', 'check-in', 'Check-in hall', '2026-10-29T09:15:00Z',
           status: staff ? 'claimed' : 'available'),
     ];
@@ -102,6 +105,10 @@ MockClient _backend() => MockClient((req) async {
         body = {'airport': _cra, 'zones': _zones(), 'airports': [_cra]};
       } else if (path == '/airports/CRA/places') {
         body = _places();
+      } else if (path == '/handed-in') {
+        body = [
+          {..._allItems()[4], 'imageUrl': '', 'photoHidden': false, 'locationHidden': false},
+        ];
       } else if (path == '/found-items') {
         final route = {'cra-terminal-2-security', 'cra-terminal-2-gates', 'cra-terminal-2-baggage', 'cra-terminal-2-arrivals'};
         body = req.url.queryParameters['onMyRoute'] == 'true'
@@ -255,6 +262,11 @@ void main() {
     await _shot(tester, 'pax_home');
     await _tap(tester, 'Find items');
     await _shot(tester, 'pax_found');
+    await _tap(tester, 'I found it');
+    await _shot(tester, 'pax_hand_in');
+    await tester.drag(find.byType(Scrollable).at(1), const Offset(0, -900));
+    await _settle(tester);
+    await _shot(tester, 'pax_hand_in_2');
     await _tap(tester, 'My reports');
     await _shot(tester, 'pax_reports');
     await _done(tester);
@@ -306,6 +318,9 @@ void main() {
     await _shot(tester, 'staff_intake');
     await _tap(tester, 'Inventory');
     await _shot(tester, 'staff_inventory');
+    await tester.drag(find.byType(Scrollable).last, const Offset(0, -1200));
+    await _settle(tester);
+    await _shot(tester, 'staff_inventory_2');
     await _tap(tester, 'Review');
     await _shot(tester, 'staff_review');
     await _tap(tester, 'Pick-up');

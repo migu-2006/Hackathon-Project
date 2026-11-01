@@ -170,6 +170,26 @@ class Api {
     return (item: FoundItem.fromJson(r['item']), notified: (r['notifiedReports'] as List).length);
   }
 
+  /// A passenger hands in an item someone else lost: it goes straight into the inventory.
+  Future<({FoundItem item, int notified})> handInItem({
+    required XFile image,
+    required String airport,
+    required String place,
+    required String description,
+    String? secretDetail,
+  }) async {
+    final r = await _postMultipart('/handed-in', {
+      'airport': airport,
+      'place': place,
+      'description': description,
+      'secretDetail': secretDetail,
+    }, image: image);
+    return (item: FoundItem.fromJson(r['item']), notified: r['notifiedReports'] as int);
+  }
+
+  /// Items the signed-in passenger handed in.
+  Future<List<FoundItem>> myHandedIn() async => [for (final i in await _get('/handed-in')) FoundItem.fromJson(i)];
+
   Future<FoundItem> foundItem(String id) async => FoundItem.fromJson(await _get('/found-items/$id'));
 
   Future<({Airport airport, List<Zone> zones, List<Airport> airports})> meta(String airport) async {
