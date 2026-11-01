@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import 'i18n.dart';
 import 'models.dart';
 
 class ApiException implements Exception {
@@ -12,6 +13,12 @@ class ApiException implements Exception {
   ApiException(this.message);
   @override
   String toString() => message;
+}
+
+/// The server could not be reached. Its text never includes the server address.
+class NetworkException implements Exception {
+  @override
+  String toString() => "Can't reach the server. Check your connection and try again.".tr;
 }
 
 /// Answer to sign-in / sign-up: a session, or "enter the code we emailed" ([pendingEmail]).
@@ -61,6 +68,18 @@ class Api {
     return Uri.parse('$baseUrl$path').replace(queryParameters: q.isEmpty ? null : q);
   }
 
+  /// Network failures (no connection, server down) carry the server address in their text;
+  /// replace them with a plain message so the address is never shown in the app.
+  Future<http.Response> _send(Future<http.Response> Function() request) async {
+    try {
+      return await request();
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw NetworkException();
+    }
+  }
+
   dynamic _decode(http.Response r) {
     final body = r.body.isEmpty ? null : jsonDecode(utf8.decode(r.bodyBytes));
     if (r.statusCode == 401 && token != null) onUnauthorized?.call();
@@ -72,22 +91,22 @@ class Api {
   }
 
   Future<dynamic> _get(String path, [Map<String, String?>? query, Map<String, String>? headers]) async =>
-      _decode(await client.get(_uri(path, query), headers: {..._auth, ...?headers}));
+      _decode(await _send(() => client.get(_uri(path, query), headers: {..._auth, ...?headers})));
 
   Future<dynamic> _postJson(String path, Map<String, dynamic> body, {Map<String, String>? headers}) async =>
-      _decode(await client.post(
-        _uri(path),
-        headers: {'Content-Type': 'application/json', ..._auth, ...?headers},
-        body: jsonEncode(body),
-      ));
+      _decode(await _send(() => client.post(
+            _uri(path),
+            headers: {'Content-Type': 'application/json', ..._auth, ...?headers},
+            body: jsonEncode(body),
+          )));
 
-  Future<dynamic> _patchJson(String path, Map<String, dynamic> body) async => _decode(await client.patch(
+  Future<dynamic> _patchJson(String path, Map<String, dynamic> body) async => _decode(await _send(() => client.patch(
         _uri(path),
         headers: {'Content-Type': 'application/json', ..._auth},
         body: jsonEncode(body),
-      ));
+      )));
 
-  Future<dynamic> _delete(String path) async => _decode(await client.delete(_uri(path), headers: _auth));
+  Future<dynamic> _delete(String path) async => _decode(await _send(() => client.delete(_uri(path), headers: _auth)));
 
   Future<dynamic> _postMultipart(String path, Map<String, String?> fields, {XFile? image}) async {
     final req = http.MultipartRequest('POST', _uri(path))..headers.addAll(_auth);
@@ -99,7 +118,7 @@ class Api {
       req.files.add(http.MultipartFile.fromBytes('image', await image.readAsBytes(),
           filename: image.name.isEmpty ? 'photo.jpg' : image.name));
     }
-    return _decode(await http.Response.fromStream(await client.send(req)));
+    return _decode(await _send(() async => http.Response.fromStream(await client.send(req))));
   }
 
   // ---------------------------------------------------------------- Accounts

@@ -60,7 +60,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) setState(() => _error = e.message);
     } catch (e) {
       if (mounted) {
-        setState(() => _error = 'Can\'t reach the server at {url}. Check the address below.'.trf({'url': Api.instance.baseUrl}));
+        setState(() => _error = 'Can\'t reach the server. Check your connection and try again.'.tr);
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -85,9 +85,15 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: AutofillGroup(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                     Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Image.asset('assets/icon/icon.png', width: 44, height: 44, cacheWidth: 132),
+                      // Hidden for the administrator: long-press the logo to point the app at another server.
+                      GestureDetector(
+                        onLongPress: () async {
+                          if (await editServerAddress(context, showCurrent: false) && mounted) setState(() => _error = null);
+                        },
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.asset('assets/icon/icon.png', width: 44, height: 44, cacheWidth: 132),
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Text('SkyFindr',
@@ -177,14 +183,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed: () => pickLanguage(context),
                       icon: Icon(Icons.translate, size: 16, color: p.muted),
                       label: Text(I18n.current.nativeName, style: TextStyle(color: p.muted, fontSize: 12)),
-                    ),
-                    TextButton.icon(
-                      onPressed: () async {
-                        await editServerAddress(context);
-                        setState(() => _error = null);
-                      },
-                      icon: Icon(Icons.dns_outlined, size: 16, color: p.muted),
-                      label: Text('Server · {url}'.trf({'url': Api.instance.baseUrl}), style: TextStyle(color: p.muted, fontSize: 12)),
                     ),
                   ]),
                 ),

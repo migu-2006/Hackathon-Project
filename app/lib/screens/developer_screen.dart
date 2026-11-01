@@ -100,7 +100,8 @@ class _DeveloperScreenState extends State<DeveloperScreen> {
       appBar: AppBar(title: Text('Developer tools'.tr)),
       body: PageBody(children: [
         const PageHeader(title: 'Demo reset', subtitle: 'Start a demo from a clean slate.'),
-        InfoRow(icon: Icons.dns_outlined, label: 'Server', value: Api.instance.baseUrl),
+        if (AppData.instance.user?.role == 'admin')
+          InfoRow(icon: Icons.dns_outlined, label: 'Server', value: Api.instance.baseUrl),
         const SizedBox(height: 8),
         SurfaceCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

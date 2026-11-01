@@ -22,6 +22,7 @@ void main() {
     AppData.instance.session.value = null;
     Api.instance.token = null;
     calls = [];
+    Api.instance.baseUrl = 'http://10.0.0.7:8000';
     Api.instance.client = MockClient((req) async {
       calls.add(req);
       Object body = [];
@@ -118,6 +119,20 @@ void main() {
     expect(calls.last.headers['Authorization'], 'Bearer tok-123');
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('token'), 'tok-123'); // stays signed in after a restart
+
+    // Only administrators see the server address.
+    await tester.tap(find.byTooltip('Account'));
+    await tester.pumpAndSettle();
+    expect(find.text('Server address'), findsNothing);
+    expect(find.textContaining('10.0.0.7'), findsNothing);
+  });
+
+  testWidgets('server down: a plain message, never the server address', (tester) async {
+    Api.instance.client = MockClient((req) async => throw http.ClientException('Connection refused', req.url));
+    await signIn(tester, 'passenger', 'right');
+    expect(find.text("Can't reach the server. Check your connection and try again."), findsOneWidget);
+    expect(find.textContaining('10.0.0.7'), findsNothing);
+    expect(find.textContaining('Server'), findsNothing);
   });
 
   testWidgets('administrator sign-in lists the accounts; sign out returns to the sign-in page', (tester) async {
@@ -129,6 +144,8 @@ void main() {
 
     await tester.tap(find.byTooltip('Account'));
     await tester.pumpAndSettle();
+    expect(find.text('Server address'), findsOneWidget);
+    expect(find.text('http://10.0.0.7:8000'), findsOneWidget);
     await tester.tap(find.text('Sign out'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Sign out'));

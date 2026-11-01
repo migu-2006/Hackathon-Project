@@ -8,6 +8,7 @@ import '../models.dart';
 import '../theme.dart';
 import '../ui.dart';
 import '../widgets.dart';
+import 'passenger/help_screen.dart';
 import 'terms_screen.dart';
 
 /// Round avatar with the account's initials, coloured by role.
@@ -45,6 +46,7 @@ class AccountButton extends StatelessWidget {
       onSelected: (v) => switch (v) {
         'password' => changePasswordDialog(context),
         'language' => pickLanguage(context),
+        'server' => editServerAddress(context),
         'terms' => Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(builder: (_) => const TermsScreen())),
         _ => confirmSignOut(context),
       },
@@ -65,6 +67,15 @@ class AccountButton extends StatelessWidget {
             subtitle: Text(I18n.current.nativeName),
           ),
         ),
+        if (user.role == 'admin')
+          PopupMenuItem(
+            value: 'server',
+            child: ListTile(
+              leading: const Icon(Icons.dns_outlined),
+              title: Text('Server address'.tr),
+              subtitle: Text(Api.instance.baseUrl),
+            ),
+          ),
         PopupMenuItem(value: 'password', child: ListTile(leading: const Icon(Icons.key_outlined), title: Text('Change password'.tr))),
         PopupMenuItem(value: 'terms', child: ListTile(leading: const Icon(Icons.description_outlined), title: Text('Terms & conditions'.tr))),
         PopupMenuItem(value: 'signout', child: ListTile(leading: const Icon(Icons.logout), title: Text('Sign out'.tr))),
