@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -27,6 +28,26 @@ class AppData extends ChangeNotifier {
   final Map<String, AirportMap> _maps = {};
   List<LostReport> reports = [];
   List<Claim> claims = [];
+
+  /// Live events from the backend WebSocket (chat messages, ...), re-published for open screens.
+  final live = StreamController<Map<String, dynamic>>.broadcast();
+
+  /// Passenger: conversations with the airport team, one per report.
+  List<ChatThread> chats = [];
+
+  /// Report whose chat is on screen (no pop-up alert for its messages).
+  String? openChat;
+
+  ChatThread? chatFor(String reportId) => chats.where((t) => t.report.id == reportId).firstOrNull;
+
+  Future<void> refreshChats() async {
+    try {
+      chats = await Api.instance.chats();
+      notifyListeners();
+    } catch (_) {
+      // Chats are extra: the rest of the app works without them.
+    }
+  }
   final Map<String, List<Match>> matchesByReport = {};
   final Map<String, FoundItem> itemCache = {};
   final themeMode = ValueNotifier(ThemeMode.system);
@@ -46,6 +67,7 @@ class AppData extends ChangeNotifier {
   /// After a developer reset: forget everything shown on this device, then reload (now empty).
   Future<void> clearPassengerData() async {
     reports = [];
+    chats = [];
     claims = [];
     matchesByReport.clear();
     itemCache.clear();
@@ -86,6 +108,7 @@ class AppData extends ChangeNotifier {
 
   void _forgetPassengerData() {
     reports = [];
+    chats = [];
     claims = [];
     matchesByReport.clear();
     itemCache.clear();
@@ -167,6 +190,7 @@ class AppData extends ChangeNotifier {
         notifyListeners();
         return;
       }
+      unawaited(refreshChats());
       final r = await Future.wait([api.lostReports(userId), api.claims(userId)]);
       reports = r[0] as List<LostReport>;
       claims = r[1] as List<Claim>;

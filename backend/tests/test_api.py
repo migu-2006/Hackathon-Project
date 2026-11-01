@@ -505,3 +505,44 @@ def test_passenger_hands_in_a_found_item(client):
     claim = finder.post("/claims", json={"reportId": mine.json()["report"]["id"], "itemId": item["id"]})
     assert claim.status_code == 403
     assert owner.post("/claims", json={"reportId": lost["id"], "itemId": item["id"]}).status_code == 200
+
+
+def test_live_chat_between_passenger_and_desk(client):
+    desk, pax, other = staff(client), passenger(client), passenger(client)
+    r = pax.post("/lost-reports", data={"category": "keys", "color": "pink", "airport": "CRA",
+                                       "route": json.dumps(["cra-terminal-2-baggage"])}).json()["report"]
+    assert pax.get("/chats").json() == []  # no match, no messages yet
+
+    # Only the passenger and the airport's staff can read or write.
+    assert other.get(f"/chats/{r['id']}").status_code == 403
+    assert other.post(f"/chats/{r['id']}", json={"text": "hi"}).status_code == 403
+    assert pax.post(f"/chats/{r['id']}", json={"text": "   "}).status_code == 422
+    assert pax.post(f"/chats/{r['id']}", json={"text": "x" * 1001}).status_code == 422
+
+    sent = pax.post(f"/chats/{r['id']}", json={"text": "Did anyone find pink keys?"}).json()
+    assert sent["senderRole"] == "passenger" and sent["senderName"] is None
+
+    threads = desk.get("/chats", params={"airport": "CRA"}).json()
+    mine = next(t for t in threads if t["report"]["id"] == r["id"])
+    assert mine["unread"] == 1 and mine["passengerName"] and mine["staffName"] is None
+
+    # Staff open it (read) and answer: they become the passenger's contact.
+    convo = desk.get(f"/chats/{r['id']}").json()
+    assert [m["text"] for m in convo["messages"]] == ["Did anyone find pink keys?"]
+    assert next(t for t in desk.get("/chats", params={"airport": "CRA"}).json() if t["report"]["id"] == r["id"])["unread"] == 0
+    reply = desk.post(f"/chats/{r['id']}", json={"text": "Yes, it is at the desk."}).json()
+    assert reply["senderRole"] == "staff" and reply["senderName"]
+
+    t = pax.get("/chats").json()[0]
+    assert t["unread"] == 1 and t["staffName"] == reply["senderName"] and t["passengerName"] is None
+    convo = pax.get(f"/chats/{r['id']}").json()
+    assert [m["senderRole"] for m in convo["messages"]] == ["passenger", "staff"]
+    assert pax.get("/chats").json()[0]["unread"] == 0
+
+    # Staff of another airport can't join.
+    email = f"lhr-{uuid.uuid4().hex[:6]}@skyfindr.app"
+    assert admin(client).post("/admin/users", json={"email": email, "password": "desk-pass", "name": "Heathrow desk",
+                                                    "role": "staff", "airport": "LHR"}).status_code == 200
+    lhr = login(client, email, "desk-pass", role="staff")
+    assert lhr.get(f"/chats/{r['id']}").status_code == 403
+    assert lhr.post(f"/chats/{r['id']}", json={"text": "hi"}).status_code == 403

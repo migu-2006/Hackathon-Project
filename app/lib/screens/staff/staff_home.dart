@@ -11,6 +11,8 @@ import '../../models.dart';
 import '../../ui.dart';
 
 import '../account.dart';
+import '../chat_screen.dart';
+import 'chats_screen.dart';
 import 'attempts_screen.dart';
 import 'intake_screen.dart';
 import 'inventory_screen.dart';
@@ -30,6 +32,7 @@ class _StaffHomeState extends State<StaffHome> {
   final _reviewKey = GlobalKey<ReviewScreenState>();
   final _attemptsKey = GlobalKey<AttemptsScreenState>();
 
+  final _chatUnread = ValueNotifier(0);
   WebSocketChannel? _channel;
   StreamSubscription? _sub;
   Timer? _reconnect;
@@ -38,6 +41,7 @@ class _StaffHomeState extends State<StaffHome> {
   void initState() {
     super.initState();
     _connect();
+    _countUnread();
     // Staff start at their home airport (set by the administrator).
     final home = AppData.instance.user?.airport;
     if (home != null && home != AppData.instance.airport.code) {
@@ -52,6 +56,7 @@ class _StaffHomeState extends State<StaffHome> {
     _reconnect?.cancel();
     _sub?.cancel();
     _channel?.sink.close();
+    _chatUnread.dispose();
     super.dispose();
   }
 
@@ -65,6 +70,7 @@ class _StaffHomeState extends State<StaffHome> {
         (msg) {
           final data = jsonDecode(msg) as Map<String, dynamic>;
           if (data['type'] == 'handed_in') _onHandedIn(data);
+          if (data['type'] == 'chat') _onChat(data);
         },
         onDone: _scheduleReconnect,
         onError: (_) => _scheduleReconnect(),
@@ -78,6 +84,48 @@ class _StaffHomeState extends State<StaffHome> {
     if (!mounted) return;
     _reconnect?.cancel();
     _reconnect = Timer(const Duration(seconds: 5), _connect);
+  }
+
+  Future<void> _countUnread() async {
+    try {
+      final threads = await Api.instance.chats(airport: AppData.instance.user?.airport ?? AppData.instance.airport.code);
+      _chatUnread.value = threads.fold(0, (n, t) => n + t.unread);
+    } catch (_) {}
+  }
+
+  Future<void> _openChats() async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ChatsScreen()));
+    _countUnread();
+  }
+
+  /// A passenger wrote: open conversations update live; otherwise alert the desk.
+  void _onChat(Map<String, dynamic> event) {
+    AppData.instance.live.add(event);
+    final m = ChatMessage.fromJson(event['message']);
+    if (!mounted || m.fromStaff || AppData.instance.openChat == m.reportId) return;
+    _countUnread();
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 8),
+      content: Row(children: [
+        const Icon(Icons.chat_bubble, color: Colors.white),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('New message from a passenger'.tr, style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text(m.text, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+          ]),
+        ),
+      ]),
+      action: SnackBarAction(
+        label: 'OPEN'.tr,
+        onPressed: () async {
+          await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(reportId: m.reportId)));
+          _countUnread();
+        },
+      ),
+    ));
   }
 
   /// A passenger handed an item in: it is already in the inventory, show it.
@@ -168,6 +216,14 @@ class _StaffHomeState extends State<StaffHome> {
           if (_tab == 1) RefreshButton(onRefresh: () => _inventoryKey.currentState?.refresh()),
           if (_tab == 2) RefreshButton(onRefresh: () => _reviewKey.currentState?.refresh()),
           if (_tab == 4) RefreshButton(onRefresh: () => _attemptsKey.currentState?.refresh()),
+          ValueListenableBuilder<int>(
+            valueListenable: _chatUnread,
+            builder: (_, unread, _) => IconButton(
+              tooltip: 'Passenger chats'.tr,
+              onPressed: _openChats,
+              icon: Badge(isLabelVisible: unread > 0, label: Text('$unread'), child: const Icon(Icons.forum_outlined)),
+            ),
+          ),
           const AccountButton(),
           const SizedBox(width: 8),
         ],

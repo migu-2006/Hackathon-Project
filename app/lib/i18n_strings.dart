@@ -757,4 +757,27 @@ const translations = <String, (String, String)>{
        '{item} ya está en el inventario de {airport} y el equipo del aeropuerto ha sido avisado. Deje el objeto en {desk} o con cualquier miembro del personal.'),
   'Handed in by a passenger': ('Predat de un pasager', 'Entregado por un pasajero'),
   'A passenger handed in {item} found at {place}.': ('Un pasager a predat {item}, găsit la {place}.', 'Un pasajero entregó {item}, encontrado en {place}.'),
+
+  // Live chat between a passenger and the Lost & Found team.
+  'OPEN': ('DESCHIDE', 'ABRIR'),
+  'You': ('Dumneavoastră', 'Usted'),
+  'Chat': ('Chat', 'Chat'),
+  '{name} · Lost & Found team': ('{name} · Echipa de obiecte pierdute', '{name} · Equipo de objetos perdidos'),
+  'Lost & Found team · {airport}': ('Echipa de obiecte pierdute · {airport}', 'Equipo de objetos perdidos · {airport}'),
+  'Chat with {name}': ('Discutați cu {name}', 'Chatear con {name}'),
+  'Chat with the Lost & Found team': ('Discutați cu echipa de obiecte pierdute', 'Chatear con el equipo de objetos perdidos'),
+  'Chat with the passenger': ('Discutați cu pasagerul', 'Chatear con el pasajero'),
+  'New message from a passenger': ('Mesaj nou de la un pasager', 'Nuevo mensaje de un pasajero'),
+  'Passenger chats': ('Conversații cu pasagerii', 'Chats con pasajeros'),
+  'Passenger chats · {airport}': ('Conversații cu pasagerii · {airport}', 'Chats con pasajeros · {airport}'),
+  'No messages yet. Say hello to the passenger.': ('Încă nu sunt mesaje. Salutați pasagerul.', 'Aún no hay mensajes. Salude al pasajero.'),
+  'Ask the Lost & Found team anything about your item. They usually answer within minutes.':
+      ('Întrebați echipa de obiecte pierdute orice despre obiectul dumneavoastră. De obicei răspunde în câteva minute.',
+       'Pregunte al equipo de objetos perdidos lo que quiera sobre su objeto. Suele responder en pocos minutos.'),
+  'Write a message…': ('Scrieți un mesaj…', 'Escriba un mensaje…'),
+  'No conversations yet. They start when a report gets a possible match or a passenger writes.':
+      ('Încă nu există conversații. Încep când un raport are o posibilă potrivire sau când scrie un pasager.',
+       'Aún no hay conversaciones. Empiezan cuando un informe tiene una posible coincidencia o escribe un pasajero.'),
+  '{item} · Report {ref}': ('{item} · Raport {ref}', '{item} · Informe {ref}'),
+  'Possible match. No messages yet.': ('Posibilă potrivire. Încă nu sunt mesaje.', 'Posible coincidencia. Aún no hay mensajes.'),
 };

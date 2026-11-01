@@ -54,6 +54,50 @@ class FoundItem {
         status = j['status'] ?? 'available';
 }
 
+/// One message in the live chat about a lost report.
+class ChatMessage {
+  final String id;
+  final String reportId;
+  final String senderId;
+  final String senderRole; // passenger, staff
+  final String? senderName; // staff only
+  final String text;
+  final DateTime timestamp;
+  final bool read;
+
+  bool get fromStaff => senderRole == 'staff';
+
+  ChatMessage.fromJson(Map<String, dynamic> j)
+      : id = j['id'],
+        reportId = j['reportId'],
+        senderId = j['senderId'] ?? '',
+        senderRole = j['senderRole'] ?? 'passenger',
+        senderName = j['senderName'],
+        text = j['text'] ?? '',
+        timestamp = DateTime.parse(j['timestamp']).toLocal(),
+        read = (j['read'] ?? 0) == 1 || j['read'] == true;
+}
+
+/// A conversation between a passenger and the airport's staff about one lost report.
+class ChatThread {
+  final LostReport report;
+  final FoundItem? item; // the item the report matched, if any
+  final String? passengerName; // staff view
+  final String? staffName; // the staff member looking after the passenger, once one answered
+  final ChatMessage? last;
+  final int unread;
+  final List<ChatMessage> messages; // only when the conversation is opened
+
+  ChatThread.fromJson(Map<String, dynamic> j)
+      : report = LostReport.fromJson(j['report']),
+        item = j['item'] == null ? null : FoundItem.fromJson(j['item']),
+        passengerName = j['passengerName'],
+        staffName = j['staffName'],
+        last = j['last'] == null ? null : ChatMessage.fromJson(j['last']),
+        unread = j['unread'] ?? 0,
+        messages = [for (final m in j['messages'] ?? const []) ChatMessage.fromJson(m)];
+}
+
 class LostReport {
   final String id;
   final String userId;

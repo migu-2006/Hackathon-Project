@@ -333,12 +333,16 @@ async def hand_in_item(
     item, analysis, notified = await _register_item(
         img, airport, zone_id, spot["label"], notes=description.strip(),
         secret=(secretDetail or "").strip() or None, source="passenger", reported_by=user["id"])
-    desk = [u["id"] for u in storage.find("users") if u["role"] == "admin"
-            or (u["role"] == "staff" and (u.get("airport") or airport) == airport)]
-    await notifier.push(desk, {"type": "handed_in", "itemId": item["id"], "airport": airport,
+    await notifier.push(_desk_ids(airport), {"type": "handed_in", "itemId": item["id"], "airport": airport,
                                "category": item["category"], "color": item["color"], "location": item["location"]})
     return {"item": _public_item(item, reveal=True, located=True), "ai": analysis.public(),
             "notifiedReports": len(notified)}
+
+
+def _desk_ids(airport: str) -> list[str]:
+    """Accounts that work the desk at this airport: its staff (and staff with no airport set) and administrators."""
+    return [u["id"] for u in storage.find("users") if u["role"] == "admin"
+            or (u["role"] == "staff" and (u.get("airport") or airport) == airport)]
 
 
 @app.get("/handed-in", tags=["Passenger"])
@@ -793,6 +797,102 @@ async def decide_claim(token: str, body: ClaimDecision, _: dict = Depends(requir
     return {"status": "rejected"}
 
 
+# ---------------------------------------------------------------- Live chat (passenger <-> desk)
+
+class ChatSend(BaseModel):
+    text: str
+
+
+def _chat_report(report_id: str, user: dict) -> dict:
+    """The lost report a conversation belongs to, if this user may take part in it."""
+    report = storage.get("lost_reports", report_id)
+    if not report:
+        raise HTTPException(404, "Report not found")
+    if auth.is_staff(user):
+        _check_staff_airport(user, report.get("airport") or config.DEFAULT_AIRPORT)
+    elif report["userId"] != user["id"]:
+        raise HTTPException(403, "This belongs to another passenger")
+    return report
+
+
+def _side(user: dict) -> str:
+    return "staff" if auth.is_staff(user) else "passenger"
+
+
+def _chat_thread(report: dict, user: dict, messages: list[dict]) -> dict:
+    """Conversation header: the report, the item it matched, who is on the other side, unread count."""
+    staff = auth.is_staff(user)
+    item = storage.get("found_items", report["matchedItemId"]) if report.get("matchedItemId") else None
+    passenger = storage.get("users", report["userId"]) or {}
+    agent = storage.get("users", report["staffId"]) if report.get("staffId") else None
+    return {
+        "report": _public_report(report),
+        "item": (_staff_item(item) if staff else _public_item(item, located=item["id"] in _approved_item_ids(user)))
+        if item else None,
+        "passengerName": passenger.get("name") or passenger.get("email", "").split("@")[0] if staff else None,
+        "staffName": agent.get("name") if agent else None,
+        "last": messages[-1] if messages else None,
+        "unread": sum(1 for m in messages if m["senderRole"] != _side(user) and not m.get("read")),
+    }
+
+
+@app.get("/chats", tags=["Live chat"])
+def list_chats(airport: str | None = None, user: dict = Depends(current_user)):
+    """Staff: conversations at their airport (reports with a possible match or any message).
+    Passengers: their own conversations. Newest activity first."""
+    if auth.is_staff(user):
+        code = _airport(airport)
+        _check_staff_airport(user, code)
+        reports = storage.find("lost_reports", airport=code)
+    else:
+        reports = storage.find("lost_reports", userId=user["id"])
+    out = []
+    for r in reports:
+        messages = storage.find("chat_messages", order="timestamp ASC", reportId=r["id"])
+        if messages or r.get("matchedItemId"):
+            out.append(_chat_thread(r, user, messages))
+    return sorted(out, key=lambda t: (t["last"] or t["report"])["timestamp"], reverse=True)
+
+
+@app.get("/chats/{report_id}", tags=["Live chat"])
+def chat_messages(report_id: str, user: dict = Depends(current_user)):
+    """The conversation about a lost report; opening it marks the other side's messages as read."""
+    report = _chat_report(report_id, user)
+    storage.execute('UPDATE chat_messages SET "read" = 1 WHERE "reportId" = ? AND "senderRole" != ?',
+                    (report_id, _side(user)))
+    messages = storage.find("chat_messages", order="timestamp ASC", reportId=report_id)
+    return {**_chat_thread(report, user, messages), "messages": messages}
+
+
+@app.post("/chats/{report_id}", tags=["Live chat"])
+async def send_chat_message(report_id: str, body: ChatSend, user: dict = Depends(current_user)):
+    """Send a message; the passenger and the airport's desk get it live over /ws."""
+    report = _chat_report(report_id, user)
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(422, "Write a message")
+    if len(text) > 1000:
+        raise HTTPException(422, "Messages can be at most 1000 characters")
+    staff = auth.is_staff(user)
+    airport = report.get("airport") or config.DEFAULT_AIRPORT
+    if staff and not report.get("staffId"):
+        # The first staff member to answer looks after this passenger from now on.
+        report = storage.update("lost_reports", report_id, staffId=user["id"]) or {**report, "staffId": user["id"]}
+    msg = storage.insert("chat_messages", {
+        "id": storage.new_id(),
+        "reportId": report_id,
+        "airport": airport,
+        "senderId": user["id"],
+        "senderRole": _side(user),
+        "senderName": (user.get("name") or user["email"].split("@")[0]) if staff else None,
+        "text": text,
+        "timestamp": storage.now(),
+        "read": 0,
+    })
+    await notifier.push(set(_desk_ids(airport)) | {report["userId"]}, {"type": "chat", "message": msg})
+    return msg
+
+
 @app.get("/health")
 def health():
     return {"ok": True}
@@ -826,7 +926,8 @@ async def dev_reset(body: ResetRequest, x_dev_key: str | None = Header(None),
     notifications) and put found items back on the shelf. With includeItems, empty the inventory too.
     Connected apps get a live {"type": "reset"} event and clear their screens."""
     _require_dev(x_dev_key, user)
-    deleted = {t: storage.execute(f"DELETE FROM {t}") for t in ("lost_reports", "claims", "claim_attempts", "notifications")}
+    deleted = {t: storage.execute(f"DELETE FROM {t}")
+               for t in ("lost_reports", "claims", "claim_attempts", "notifications", "chat_messages")}
     prefixes = ("lost_",)
     if body.includeItems:
         deleted["found_items"] = storage.execute("DELETE FROM found_items")

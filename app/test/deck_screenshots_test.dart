@@ -14,10 +14,12 @@ import 'package:http/testing.dart';
 import 'package:lost_found_app/api.dart';
 import 'package:lost_found_app/app_state.dart';
 import 'package:lost_found_app/models.dart';
+import 'package:lost_found_app/screens/chat_screen.dart';
 import 'package:lost_found_app/screens/passenger/item_details_screen.dart';
 import 'package:lost_found_app/screens/passenger/my_reports_screen.dart';
 import 'package:lost_found_app/screens/passenger/report_screen.dart';
 import 'package:lost_found_app/screens/passenger/shell.dart';
+import 'package:lost_found_app/screens/staff/chats_screen.dart';
 import 'package:lost_found_app/screens/staff/pickup_screen.dart';
 import 'package:lost_found_app/screens/staff/staff_home.dart';
 import 'package:lost_found_app/screens/verify_email_screen.dart';
@@ -90,6 +92,26 @@ final _reports = [
   },
 ];
 
+Map<String, dynamic> _msg(String id, String role, String text, String time, {bool read = true}) => {
+      'id': id, 'reportId': 'r7k2m9q4x1z0', 'airport': 'CRA', 'senderId': role == 'staff' ? 's1' : 'pax-ana',
+      'senderRole': role, 'senderName': role == 'staff' ? 'Maria Ionescu' : null, 'text': text,
+      'timestamp': '2026-10-31T$time:00Z', 'read': read ? 1 : 0,
+    };
+
+final _messages = [
+  _msg('m1', 'staff', 'Hi Ana, I am Maria from the Lost & Found desk. We have a black phone from gate 3 that could be yours.', '08:12'),
+  _msg('m2', 'passenger', 'That sounds like mine! It has a gold case.', '08:14'),
+  _msg('m3', 'staff', 'Great. Please send the private claim from the app so I can confirm it.', '08:15'),
+  _msg('m4', 'passenger', 'Done, I just sent it. When can I pick it up?', '08:21'),
+  _msg('m5', 'staff', 'Approved! The desk in the arrivals hall is open until 22:00. Bring your ID and the pickup pass.', '08:33'),
+];
+
+Map<String, dynamic> _thread({bool staff = false, bool withMessages = false}) => {
+      'report': _reports[0], 'item': _items(staff: staff)[0], 'passengerName': staff ? 'Ana Pop' : null,
+      'staffName': 'Maria Ionescu', 'last': _messages.last, 'unread': staff ? 0 : 1,
+      if (withMessages) 'messages': _messages,
+    };
+
 final _claim = {
   'id': 'c7f3a91c2d4e5', 'token': '7f3a91c2d4e5', 'pickupCode': 'K7M2QX', 'reportId': 'r7k2m9q4x1z0', 'itemId': '9c1e7a2b44d0',
   'question': 'Describe something distinctive about the item (case, stickers, scratches, engravings).',
@@ -105,6 +127,19 @@ MockClient _backend() => MockClient((req) async {
         body = {'airport': _cra, 'zones': _zones(), 'airports': [_cra]};
       } else if (path == '/airports/CRA/places') {
         body = _places();
+      } else if (path == '/chats') {
+        body = staff
+            ? [
+                {..._thread(staff: true), 'last': _msg('x1', 'passenger', 'Is the desk open on Sunday morning?', '09:40', read: false), 'unread': 2},
+                {
+                  ..._thread(staff: true), 'report': {..._reports[1], 'id': 'w4n8c2x7k5p3', 'category': 'wallet', 'color': 'brown'},
+                  'item': _items(staff: true)[2], 'passengerName': 'Radu Marin', 'last': null, 'unread': 0,
+                },
+                _thread(staff: true),
+              ]
+            : [_thread()];
+      } else if (path.startsWith('/chats/')) {
+        body = _thread(staff: staff, withMessages: true);
       } else if (path == '/handed-in') {
         body = [
           {..._allItems()[4], 'imageUrl': '', 'photoHidden': false, 'locationHidden': false},
@@ -283,6 +318,8 @@ void main() {
       ),
     );
     await _shot(tester, 'pax_pass');
+    await _show(tester, const ChatScreen(reportId: 'r7k2m9q4x1z0'));
+    await _shot(tester, 'pax_chat');
     await _done(tester);
   });
 
@@ -327,6 +364,8 @@ void main() {
     await _shot(tester, 'staff_pickup');
     await _show(tester, const ClaimReviewScreen(token: '7f3a91c2d4e5'));
     await _shot(tester, 'staff_scan');
+    await _show(tester, const ChatsScreen());
+    await _shot(tester, 'staff_chats');
     await _done(tester);
   });
 }

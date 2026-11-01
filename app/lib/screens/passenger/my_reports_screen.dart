@@ -7,6 +7,7 @@ import '../../glass.dart';
 import '../../models.dart';
 import '../../theme.dart';
 import '../../ui.dart';
+import '../chat_screen.dart';
 import 'item_details_screen.dart';
 import 'map_screen.dart';
 import 'report_screen.dart';
@@ -249,6 +250,11 @@ class _ReportCase extends StatelessWidget {
             onPressed: () => _openMatch(context, claim, matches),
             child: Row(children: [Expanded(child: Text('Review potential match'.tr)), const Icon(Icons.north_east, size: 18)]),
           ),
+        // Once there is a possible match (or the team wrote first), talk to the team directly.
+        if (stage != ReportStage.searching || data.chatFor(report.id) != null) ...[
+          const SizedBox(height: 8),
+          _ChatButton(report: report, thread: data.chatFor(report.id)),
+        ],
       ]),
     );
   }
@@ -281,6 +287,32 @@ class _ReportCase extends StatelessWidget {
           Text('Your answer is only visible to the airport team.'.tr, style: TextStyle(color: p.muted, fontSize: 12)),
         ]),
       ),
+    );
+  }
+}
+
+/// Opens the live chat with the Lost & Found team about this report.
+class _ChatButton extends StatelessWidget {
+  final LostReport report;
+  final ChatThread? thread;
+  const _ChatButton({required this.report, this.thread});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Palette.of(context);
+    final unread = thread?.unread ?? 0;
+    return OutlinedButton(
+      onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(reportId: report.id))),
+      child: Row(children: [
+        Badge(isLabelVisible: unread > 0, label: Text('$unread'), child: Icon(Icons.chat_bubble_outline, size: 18, color: p.primary)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(thread?.staffName != null
+              ? 'Chat with {name}'.trf({'name': thread!.staffName!})
+              : 'Chat with the Lost & Found team'.tr),
+        ),
+        const Icon(Icons.north_east, size: 18),
+      ]),
     );
   }
 }

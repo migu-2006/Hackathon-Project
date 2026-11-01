@@ -96,6 +96,18 @@ CREATE TABLE IF NOT EXISTS verification_codes (
     "sentAt" TEXT
 );
 
+CREATE TABLE IF NOT EXISTS chat_messages (
+    "id" TEXT PRIMARY KEY,
+    "reportId" TEXT,        -- one conversation per lost report
+    "airport" TEXT,
+    "senderId" TEXT,
+    "senderRole" TEXT,      -- passenger | staff
+    "senderName" TEXT,
+    "text" TEXT,
+    "timestamp" TEXT,
+    "read" INTEGER DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
     "id" TEXT PRIMARY KEY,  -- SHA-256 of the bearer token (the token itself is never stored)
     "userId" TEXT,
@@ -114,3 +126,4 @@ ALTER TABLE notifications  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE users          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sessions       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE verification_codes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_messages  ENABLE ROW LEVEL SECURITY;

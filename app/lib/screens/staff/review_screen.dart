@@ -6,6 +6,7 @@ import '../../models.dart';
 import '../../theme.dart';
 import '../../ui.dart';
 import '../../widgets.dart';
+import '../chat_screen.dart';
 
 /// Ownership review: compare the passenger's private answer with the hidden detail, then
 /// approve (passenger gets a pickup pass) or reject (report goes back to searching).
@@ -106,7 +107,14 @@ class ReviewScreenState extends State<ReviewScreen> {
               Text('Report: {text}'.trf({'text': report.description}), style: const TextStyle(fontSize: 13)),
           ]),
         ),
-        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(reportId: report.id))),
+            icon: const Icon(Icons.chat_bubble_outline, size: 18),
+            label: Text('Chat with the passenger'.tr),
+          ),
+        ),
         Row(children: [
           Expanded(
             child: OutlinedButton.icon(

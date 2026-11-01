@@ -102,6 +102,17 @@ CREATE TABLE IF NOT EXISTS verification_codes (
     attempts INTEGER DEFAULT 0,
     sentAt TEXT
 );
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id TEXT PRIMARY KEY,
+    reportId TEXT,        -- one conversation per lost report, between its passenger and the airport's staff
+    airport TEXT,
+    senderId TEXT,
+    senderRole TEXT,      -- passenger | staff
+    senderName TEXT,
+    text TEXT,
+    timestamp TEXT,
+    read INTEGER DEFAULT 0  -- 1 once the other side opened the conversation
+);
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,  -- SHA-256 of the bearer token (the token itself is never stored)
     userId TEXT,
@@ -143,6 +154,7 @@ def _migrate_postgres(conn) -> None:
     conn.execute('ALTER TABLE lost_reports ADD COLUMN IF NOT EXISTS "route" TEXT')
     conn.execute('ALTER TABLE found_items ADD COLUMN IF NOT EXISTS "source" TEXT')
     conn.execute('ALTER TABLE found_items ADD COLUMN IF NOT EXISTS "reportedBy" TEXT')
+    conn.execute('ALTER TABLE lost_reports ADD COLUMN IF NOT EXISTS "staffId" TEXT')
     for table in ("found_items", "lost_reports"):
         conn.execute(f'UPDATE {table} SET "airport" = %s WHERE "airport" IS NULL', (config.DEFAULT_AIRPORT,))
 
@@ -152,7 +164,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for table, column in [("lost_reports", "travelDate"), ("claims", "reviewedAt"),
                           ("found_items", "airport"), ("found_items", "zoneId"), ("lost_reports", "airport"),
                           ("found_items", "previewUrl"), ("claims", "pickupCode"), ("lost_reports", "route"),
-                          ("found_items", "source"), ("found_items", "reportedBy")]:
+                          ("found_items", "source"), ("found_items", "reportedBy"), ("lost_reports", "staffId")]:
         existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")

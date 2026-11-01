@@ -10,6 +10,7 @@ import '../../app_state.dart';
 import '../../i18n.dart';
 import '../../models.dart';
 import '../../theme.dart';
+import '../chat_screen.dart';
 import 'found_items_screen.dart';
 import 'hand_in_screen.dart';
 import 'help_screen.dart';
@@ -69,7 +70,14 @@ class _AppShellState extends State<AppShell> {
       _sub = _channel!.stream.listen(
         (msg) {
           final data = jsonDecode(msg) as Map<String, dynamic>;
-          data['type'] == 'reset' ? _onReset() : _onNotification(AppNotification.fromJson(data));
+          switch (data['type']) {
+            case 'reset':
+              _onReset();
+            case 'chat':
+              _onChat(data);
+            case null:
+              _onNotification(AppNotification.fromJson(data));
+          }
         },
         onDone: _scheduleReconnect,
         onError: (_) => _scheduleReconnect(),
@@ -108,6 +116,37 @@ class _AppShellState extends State<AppShell> {
         label: 'VIEW'.tr,
         textColor: Colors.white,
         onPressed: () => _goTo(ShellTab.reports, reset: true),
+      ),
+    ));
+  }
+
+  /// A message in a conversation with the airport team: open chats update live; otherwise alert.
+  void _onChat(Map<String, dynamic> event) {
+    AppData.instance.live.add(event);
+    final m = ChatMessage.fromJson(event['message']);
+    AppData.instance.refreshChats();
+    if (!mounted || !m.fromStaff || AppData.instance.openChat == m.reportId) return;
+    if (_tab != ShellTab.reports) _unread.value++;
+    final p = Palette.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 8),
+      backgroundColor: p.primary,
+      content: Row(children: [
+        const Icon(Icons.chat_bubble, color: Colors.white),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('{name} · Lost & Found team'.trf({'name': m.senderName ?? 'Staff'.tr}),
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text(m.text, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+          ]),
+        ),
+      ]),
+      action: SnackBarAction(
+        label: 'OPEN'.tr,
+        textColor: Colors.white,
+        onPressed: () => _goTo(ShellTab.reports, reset: true, push: ChatScreen(reportId: m.reportId)),
       ),
     ));
   }

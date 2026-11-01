@@ -268,6 +268,18 @@ class Api {
     );
   }
 
+  // ---------------------------------------------------------------- Live chat
+
+  /// Conversations: staff get those at [airport], passengers their own.
+  Future<List<ChatThread>> chats({String? airport}) async =>
+      [for (final t in await _get('/chats', {'airport': airport})) ChatThread.fromJson(t)];
+
+  /// One conversation with its messages (marks the other side's messages as read).
+  Future<ChatThread> chat(String reportId) async => ChatThread.fromJson(await _get('/chats/$reportId'));
+
+  Future<ChatMessage> sendChat(String reportId, String text) async =>
+      ChatMessage.fromJson(await _postJson('/chats/$reportId', {'text': text}));
+
   Future<List<LostReport>> lostReports(String userId) async =>
       [for (final r in await _get('/lost-reports', {'userId': userId})) LostReport.fromJson(r)];
 
